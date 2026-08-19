@@ -10,7 +10,5 @@ services:
         sync: false
       - key: SITE_PASSWORD
         sync: false
-      - key: WEBSHARE_PROXY_USERNAME
-        sync: false
-      - key: WEBSHARE_PROXY_PASSWORD
+      - key: PROXY_URL
         sync: false

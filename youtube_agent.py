@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from groq import Groq, RateLimitError
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import WebshareProxyConfig
+from youtube_transcript_api.proxies import GenericProxyConfig
 
 try:
     from dotenv import load_dotenv
@@ -184,12 +184,14 @@ def get_metadata(url: str) -> dict:
 
 
 def _transcript_api() -> YouTubeTranscriptApi:
-    proxy_user = os.environ.get("WEBSHARE_PROXY_USERNAME")
-    proxy_pass = os.environ.get("WEBSHARE_PROXY_PASSWORD")
-    if proxy_user and proxy_pass:
-        return YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(proxy_username=proxy_user, proxy_password=proxy_pass)
-        )
+    # Optional: route transcript fetches through a proxy (e.g. to work around
+    # YouTube blocking cloud-host IPs). PROXY_URL should look like
+    # http://user:pass@host:port. Note: free/datacenter proxies (tested with
+    # Webshare's free tier) do NOT work here - YouTube blocks datacenter IP
+    # ranges as a class. This only helps with a paid *residential* proxy.
+    proxy_url = os.environ.get("PROXY_URL")
+    if proxy_url:
+        return YouTubeTranscriptApi(proxy_config=GenericProxyConfig(http_url=proxy_url, https_url=proxy_url))
     return YouTubeTranscriptApi()
 
 

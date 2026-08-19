@@ -56,6 +56,12 @@ Want this reachable from anywhere, not just your PC? See
 **[DEPLOY.md](DEPLOY.md)** — deploys to Render's free tier, no credit
 card, no domain purchase. `render.yaml` is already set up for it.
 
+One known limitation on the public deployment: YouTube blocks transcript
+requests from cloud/datacenter IPs (tested - free proxies don't get
+around this, it needs a paid residential proxy). **PDF summaries work
+fine on the live site either way**; YouTube summaries currently only
+work when running locally. Details in DEPLOY.md.
+
 ## Command line
 
 ### PDF summarizer
