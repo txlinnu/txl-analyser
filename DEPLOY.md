@@ -5,6 +5,10 @@ git commit are already set up. These last steps need your own accounts
 (I can't create accounts or log in on your behalf), so here's exactly
 what to do:
 
+Auto-deploy on push is active once Render's GitHub App is properly
+installed (not just OAuth-authorized) at github.com/apps/render, with
+access granted to this repo.
+
 ## 1. Push the code to GitHub
 
 If you don't have a GitHub account yet, create one free at
