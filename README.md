@@ -50,6 +50,12 @@ Each form has a "Speed / accuracy" dropdown:
 `python -c "from groq import Groq; [print(m.id) for m in Groq().models.list().data]"`
 to see what's currently available and update `DEFAULT_MODEL` / `MODEL_CHOICES`.)
 
+### Deploying it for free (a real public URL)
+
+Want this reachable from anywhere, not just your PC? See
+**[DEPLOY.md](DEPLOY.md)** — deploys to Render's free tier, no credit
+card, no domain purchase. `render.yaml` is already set up for it.
+
 ## Command line
 
 ### PDF summarizer
