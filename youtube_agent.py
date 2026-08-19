@@ -35,6 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 from groq import Groq, RateLimitError
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 try:
     from dotenv import load_dotenv
@@ -182,9 +183,18 @@ def get_metadata(url: str) -> dict:
     }
 
 
+def _transcript_api() -> YouTubeTranscriptApi:
+    proxy_user = os.environ.get("WEBSHARE_PROXY_USERNAME")
+    proxy_pass = os.environ.get("WEBSHARE_PROXY_PASSWORD")
+    if proxy_user and proxy_pass:
+        return YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(proxy_username=proxy_user, proxy_password=proxy_pass)
+        )
+    return YouTubeTranscriptApi()
+
+
 def get_transcript(video_id: str) -> str:
-    ytt_api = YouTubeTranscriptApi()
-    fetched = ytt_api.fetch(video_id)
+    fetched = _transcript_api().fetch(video_id)
     return " ".join(snippet.text for snippet in fetched)
 
 

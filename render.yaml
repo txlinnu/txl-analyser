@@ -4,9 +4,13 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements-local.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 2
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
     envVars:
       - key: GROQ_API_KEY
         sync: false
       - key: SITE_PASSWORD
+        sync: false
+      - key: WEBSHARE_PROXY_USERNAME
+        sync: false
+      - key: WEBSHARE_PROXY_PASSWORD
         sync: false
