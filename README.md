@@ -70,7 +70,7 @@ way.** For YouTube, you have two free options:
 
 Details in DEPLOY.md.
 
-## TXL Claude (chat assistant)
+## TXL Cloud (chat assistant)
 
 A separate, standalone chat app — [`chat_app.py`](chat_app.py) — Claude-style
 multi-turn conversation, streamed replies, sidebar with chat history,
@@ -80,7 +80,7 @@ interchangeable backends**:
 
 | | Groq (default) | Ollama (local) |
 |---|---|---|
-| Agent | [`txl_claude.py`](txl_claude.py) | [`txl_claude_local.py`](txl_claude_local.py) |
+| Agent | [`txl_cloud.py`](txl_cloud.py) | [`txl_cloud_local.py`](txl_cloud_local.py) |
 | Cost | Free | Free |
 | Speed | Fast (cloud) | As fast as your own hardware |
 | Daily limit | Yes — Groq's free-tier token cap | **None** |
@@ -89,7 +89,7 @@ interchangeable backends**:
 
 **Heads up**: by default the Groq backend shares `GROQ_API_KEY` with `app.py`
 (TXL Analyser) — both draw from the same daily free-tier quota, so heavy
-use of one eats into the other's headroom. To give TXL Claude its own
+use of one eats into the other's headroom. To give TXL Cloud its own
 separate quota, create a second (free) Groq account and set
 `CHAT_GROQ_API_KEY` in `.env` — see `.env.example`. Multiple keys on the
 *same* Groq account still share one quota, so it has to be a different
@@ -142,7 +142,7 @@ Sidebar extras:
   a Project** to group related chats — make a project with the **+** next
   to "Projects".
 - **🗄 Artifacts** (in the sidebar) is a gallery of every code block 5+
-  lines long TXL Claude has written this session, across all chats and
+  lines long TXL Cloud has written this session, across all chats and
   Code mode, with copy/download.
 - **🎨 Customize** lets you set standing instructions (tone, preferred
   language, etc.) that get added to every message in Chat mode - saved
@@ -157,7 +157,7 @@ edit the link in `index.html` (for app.py) to match.
 
 ### Code mode - a small coding agent
 
-Click the **"⌨ Code"** tab in TXL Claude's sidebar (or go to `/code`) for
+Click the **"⌨ Code"** tab in TXL Cloud's sidebar (or go to `/code`) for
 a real coding-agent mode, similar in spirit to Claude Code itself: the
 model can list directories, read files, write files, and run shell
 commands — using [`code_agent.py`](code_agent.py) and whichever chat

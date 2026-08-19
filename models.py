@@ -1,5 +1,5 @@
 """
-TXL Claude - Database models
+TXL Cloud - Database models
 ------------------------------------
 Backs real user accounts and persisted chat/project data, so history
 survives logins and server restarts - unlike the earlier in-memory,

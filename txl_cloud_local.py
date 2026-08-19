@@ -1,9 +1,9 @@
 """
-TXL Claude - Fully Local Edition
+TXL Cloud - Fully Local Edition
 ------------------------------------
 $0 cost AND fully private AND unlimited: runs entirely on your own PC via
 Ollama - no API key, no daily token cap, nothing ever sent anywhere. The
-trade-off vs the Groq edition (txl_claude.py) is speed and setup: replies
+trade-off vs the Groq edition (txl_cloud.py) is speed and setup: replies
 are only as fast as your hardware, and you need to install Ollama and
 download a model (several GB) first.
 
@@ -34,7 +34,7 @@ import ollama
 DEFAULT_MODEL = "qwen2.5:7b"
 MAX_HISTORY_MESSAGES = 24  # ~12 user/assistant turns kept; oldest trimmed first
 
-SYSTEM_PROMPT = """You are TXL Claude, a free, private, helpful AI chat \
+SYSTEM_PROMPT = """You are TXL Cloud, a free, private, helpful AI chat \
 assistant. You're inspired by Claude's helpful/honest/concise style, but \
 you are a separate, independent assistant, running entirely locally on \
 this machine via an open-weight model - if asked, be upfront about that \
@@ -157,7 +157,7 @@ def run_with_tools(messages: List[dict], tools: List[dict], model: str = DEFAULT
 def main():
     """Quick CLI smoke test: a single-turn chat from argv."""
     if len(sys.argv) < 2:
-        sys.exit('Usage: python txl_claude_local.py "your message"')
+        sys.exit('Usage: python txl_cloud_local.py "your message"')
     message = " ".join(sys.argv[1:])
     for chunk in stream_reply([{"role": "user", "content": message}]):
         print(chunk, end="", flush=True)

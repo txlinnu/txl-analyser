@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TXL Claude - Artifacts</title>
+<title>TXL Cloud - Artifacts</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%2290%22 fill=%22%23C15F3C%22>✦</text></svg>">
 <style>
   {{ pygments_css | safe }}
@@ -100,7 +100,7 @@
 
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><span class="mark">✦</span> TXL Claude</div>
+    <div class="brand"><span class="mark">✦</span> TXL Cloud</div>
     <div class="backend-badge">{{ header_badge }}</div>
     <div class="mode-tabs">
       <a class="mode-tab active" href="/">🏠 Home</a>
@@ -118,7 +118,7 @@
   <main>
     <div class="page-header">
       <h1>🗄 Artifacts</h1>
-      <p>Every code block TXL Claude has written for you this session, in one place.</p>
+      <p>Every code block TXL Cloud has written for you this session, in one place.</p>
     </div>
 
     {% if items %}
@@ -145,7 +145,7 @@
     {% else %}
       <div class="empty">
         <div class="mark">🗄</div>
-        <p>No artifacts yet — ask TXL Claude to write some code (5+ lines) in a chat or in Code mode, and it'll show up here.</p>
+        <p>No artifacts yet — ask TXL Cloud to write some code (5+ lines) in a chat or in Code mode, and it'll show up here.</p>
       </div>
     {% endif %}
   </main>
@@ -192,7 +192,7 @@ sidebarScrim.addEventListener('click', () => {
   sidebarScrim.classList.remove('open');
 });
 
-const savedTheme = localStorage.getItem('txlclaude-theme');
+const savedTheme = localStorage.getItem('txlcloud-theme');
 if (savedTheme === 'light' || savedTheme === 'dark') {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }

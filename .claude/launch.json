@@ -9,14 +9,14 @@
       "autoPort": true
     },
     {
-      "name": "txl-claude-chat",
+      "name": "txl-cloud-chat",
       "runtimeExecutable": "python",
       "runtimeArgs": ["chat_app.py"],
       "port": 5001,
       "autoPort": true
     },
     {
-      "name": "txl-claude-chat-local",
+      "name": "txl-cloud-chat-local",
       "runtimeExecutable": "python",
       "runtimeArgs": ["chat_app.py"],
       "env": { "CHAT_BACKEND": "ollama" },

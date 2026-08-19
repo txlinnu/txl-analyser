@@ -1,5 +1,5 @@
 """
-TXL Claude - Free Chat Agent
+TXL Cloud - Free Chat Agent
 ------------------------------------
 A Claude-style chat assistant, powered by Groq's free API (open-weight
 models, generous free tier, no credit card) instead of a paid model.
@@ -32,7 +32,7 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_RETRIES = 5
 MAX_HISTORY_MESSAGES = 24  # ~12 user/assistant turns kept; oldest trimmed first
 
-SYSTEM_PROMPT = """You are TXL Claude, a free, private, helpful AI chat \
+SYSTEM_PROMPT = """You are TXL Cloud, a free, private, helpful AI chat \
 assistant. You're inspired by Claude's helpful/honest/concise style, but \
 you are a separate, independent assistant, built to run on a free \
 open-weight model (via Groq) rather than Anthropic's Claude models - if \
@@ -51,7 +51,7 @@ _client = None
 def _get_client() -> Groq:
     global _client
     if _client is None:
-        # CHAT_GROQ_API_KEY, if set, lets TXL Claude use a different Groq
+        # CHAT_GROQ_API_KEY, if set, lets TXL Cloud use a different Groq
         # account/quota than the other agents here (pdf_research_agent_local.py,
         # youtube_agent.py) - useful since they'd otherwise all share one
         # daily free-tier token limit. Falls back to the same GROQ_API_KEY
@@ -168,7 +168,7 @@ def run_with_tools(messages: List[dict], tools: List[dict], model: str = DEFAULT
 def main():
     """Quick CLI smoke test: a single-turn chat from argv."""
     if len(sys.argv) < 2:
-        sys.exit('Usage: python txl_claude.py "your message"')
+        sys.exit('Usage: python txl_cloud.py "your message"')
     message = " ".join(sys.argv[1:])
     for chunk in stream_reply([{"role": "user", "content": message}]):
         print(chunk, end="", flush=True)

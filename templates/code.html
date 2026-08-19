@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TXL Claude - Code</title>
+<title>TXL Cloud - Code</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%2290%22 fill=%22%23C15F3C%22>✦</text></svg>">
 <style>
   {{ pygments_css | safe }}
@@ -304,7 +304,7 @@
 
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><span class="mark">✦</span> TXL Claude</div>
+    <div class="brand"><span class="mark">✦</span> TXL Cloud</div>
     <div class="backend-badge">{{ header_badge }}</div>
     <div class="mode-tabs">
       <a class="mode-tab" href="/">🏠 Home</a>
@@ -395,7 +395,7 @@
       {% endif %}
       <div id="quoted-slot"></div>
       <div class="composer-inner">
-        <textarea id="input" rows="1" placeholder="Ask TXL Claude to build or change something..." autofocus></textarea>
+        <textarea id="input" rows="1" placeholder="Ask TXL Cloud to build or change something..." autofocus></textarea>
         <button class="send-btn" id="send-btn" type="button" aria-label="Send">➤</button>
       </div>
       <p class="footnote">File writes and commands only run after you click Approve. Nothing outside the workspace folder is reachable.</p>
@@ -914,7 +914,7 @@ if (INITIAL_PENDING) {
 }
 
 /* Apply the same manual theme override chat mode uses, if set. */
-const savedTheme = localStorage.getItem('txlclaude-theme');
+const savedTheme = localStorage.getItem('txlcloud-theme');
 if (savedTheme === 'light' || savedTheme === 'dark') {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }

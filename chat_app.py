@@ -1,21 +1,21 @@
 """
-TXL Claude - Web UI
+TXL Cloud - Web UI
 ------------------------------------
-A standalone local Flask website for the TXL Claude chat agent. Runs as
+A standalone local Flask website for the TXL Cloud chat agent. Runs as
 its own process on its own port, separate from app.py (TXL Analyser) - so
 both can run side by side without a port clash.
 
 Two interchangeable backends, picked with CHAT_BACKEND:
-  - groq (default)  txl_claude.py       - Groq's free cloud API. Fast, but
-                                           capped at a daily free-tier token
-                                           quota, and your messages are
-                                           sent to Groq's servers.
-  - ollama           txl_claude_local.py - runs entirely on this machine via
-                                           Ollama. No cap, nothing ever
-                                           leaves this PC - but needs Ollama
-                                           installed and a model pulled
-                                           first, and is only as fast as
-                                           this machine's hardware.
+  - groq (default)  txl_cloud.py       - Groq's free cloud API. Fast, but
+                                          capped at a daily free-tier token
+                                          quota, and your messages are
+                                          sent to Groq's servers.
+  - ollama           txl_cloud_local.py - runs entirely on this machine via
+                                          Ollama. No cap, nothing ever
+                                          leaves this PC - but needs Ollama
+                                          installed and a model pulled
+                                          first, and is only as fast as
+                                          this machine's hardware.
 
 Real accounts: sign up / log in with an email + password. Chats,
 projects, and Code-mode history are stored per-account in a database
@@ -49,7 +49,7 @@ app = Flask(__name__)
 BACKEND = os.environ.get("CHAT_BACKEND", "groq").strip().lower()
 
 if BACKEND == "ollama":
-    import txl_claude_local as agent
+    import txl_cloud_local as agent
     MODEL_CHOICES = [
         ("qwen2.5:7b", "Balanced — quicker, still solid"),
         ("qwen2.5:14b", "Accurate — bigger, slower"),
@@ -58,7 +58,7 @@ if BACKEND == "ollama":
     LANDING_SUBTITLE = "Runs 100% on this machine via Ollama — no daily limit, nothing ever sent anywhere."
     FOOTNOTE = "Runs entirely locally via Ollama — no data ever leaves this machine, no usage limit."
 else:
-    import txl_claude as agent
+    import txl_cloud as agent
     MODEL_CHOICES = [
         ("openai/gpt-oss-120b", "Balanced — more accurate, slower"),
         ("openai/gpt-oss-20b", "Fast — quicker, less detailed"),
@@ -190,7 +190,7 @@ def require_password():
     auth = request.authorization
     if not auth or auth.password != SITE_PASSWORD:
         return Response(
-            "Login required", 401, {"WWW-Authenticate": 'Basic realm="TXL Claude"'}
+            "Login required", 401, {"WWW-Authenticate": 'Basic realm="TXL Cloud"'}
         )
     return None
 

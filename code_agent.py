@@ -1,7 +1,7 @@
 """
-TXL Claude - Code Mode engine
+TXL Cloud - Code Mode engine
 ------------------------------------
-Turns TXL Claude into a small Claude-Code-style coding agent: it can list
+Turns TXL Cloud into a small Claude-Code-style coding agent: it can list
 directories, read files, write files, and run shell commands inside a
 sandboxed workspace folder - using whichever chat backend (Groq or
 Ollama) chat_app.py currently has loaded as `agent`.
@@ -98,7 +98,7 @@ TOOLS = [
     },
 ]
 
-SYSTEM_PROMPT_TEMPLATE = """You are TXL Claude in Code mode: a coding \
+SYSTEM_PROMPT_TEMPLATE = """You are TXL Cloud in Code mode: a coding \
 agent with tools to inspect and modify files, and run shell commands, \
 inside the user's local workspace at {workspace}. You cannot see or \
 touch anything outside that folder.

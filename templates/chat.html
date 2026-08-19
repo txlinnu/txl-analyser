@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TXL Claude</title>
+<title>TXL Cloud</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%2290%22 fill=%22%23C15F3C%22>✦</text></svg>">
 <style>
   {{ pygments_css | safe }}
@@ -732,7 +732,7 @@
 
 <div class="app-shell">
   <aside class="sidebar" id="sidebar">
-    <div class="brand"><span class="mark">✦</span> TXL Claude</div>
+    <div class="brand"><span class="mark">✦</span> TXL Cloud</div>
     <div class="backend-badge">{{ header_badge }}</div>
     <div class="mode-tabs">
       <a class="mode-tab active" href="/">🏠 Home</a>
@@ -820,7 +820,7 @@
       <div class="composer-inner">
         <input type="file" id="file-input" accept=".txt,.md,.py,.js,.jsx,.ts,.tsx,.json,.csv,.log,.html,.css,.yaml,.yml,.sh,.c,.cpp,.h,.java,.go,.rs,.rb,.php,.sql,.xml" style="display:none;">
         <button class="tool-btn" id="attach-btn" type="button" aria-label="Attach a text/code file" title="Attach a text/code file">📎</button>
-        <textarea id="input" rows="1" placeholder="Message TXL Claude..." autofocus></textarea>
+        <textarea id="input" rows="1" placeholder="Message TXL Cloud..." autofocus></textarea>
         <button class="tool-btn" id="mic-btn" type="button" aria-label="Voice input" title="Voice input">🎤</button>
         <button class="send-btn" id="send-btn" type="button" aria-label="Send">➤</button>
       </div>
@@ -878,12 +878,12 @@
 <div class="modal-scrim" id="customize-scrim"></div>
 <div class="modal" id="customize-modal">
   <div class="modal-header">
-    <h3>Customize TXL Claude</h3>
+    <h3>Customize TXL Cloud</h3>
     <button class="panel-btn icon" id="customize-close-btn" type="button" aria-label="Close">✕</button>
   </div>
   <div class="modal-body">
     <div class="setting-row" style="display:block;">
-      <label for="custom-instructions" style="display:block;margin-bottom:8px;">How would you like TXL Claude to respond?</label>
+      <label for="custom-instructions" style="display:block;margin-bottom:8px;">How would you like TXL Cloud to respond?</label>
       <textarea id="custom-instructions" rows="6" placeholder="e.g. Keep answers short. Prefer Python over JavaScript. Explain things simply, I'm new to this." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--main-bg);color:var(--text);font-family:inherit;font-size:0.85rem;resize:vertical;"></textarea>
     </div>
     <p style="font-size:0.76rem;color:var(--muted);margin:0;">Saved on this browser only, sent along with new messages. Doesn't affect Code mode.</p>
@@ -1027,7 +1027,7 @@ async function sendMessage(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: text, model: modelSelect.value, conv_id: currentConvId,
-        custom_instructions: localStorage.getItem('txlclaude-custom-instructions') || '',
+        custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
         web_search: websearchToggle.classList.contains('active'),
       }),
     });
@@ -1339,20 +1339,20 @@ function applyTheme(value) {
     document.documentElement.removeAttribute('data-theme');
   }
 }
-const savedTheme = localStorage.getItem('txlclaude-theme') || 'system';
+const savedTheme = localStorage.getItem('txlcloud-theme') || 'system';
 themeSelect.value = savedTheme;
 applyTheme(savedTheme);
 themeSelect.addEventListener('change', () => {
-  localStorage.setItem('txlclaude-theme', themeSelect.value);
+  localStorage.setItem('txlcloud-theme', themeSelect.value);
   applyTheme(themeSelect.value);
 });
 
-const savedModel = localStorage.getItem('txlclaude-model');
+const savedModel = localStorage.getItem('txlcloud-model');
 if (savedModel && [...modelSelect.options].some(o => o.value === savedModel)) {
   modelSelect.value = savedModel;
 }
 modelSelect.addEventListener('change', () => {
-  localStorage.setItem('txlclaude-model', modelSelect.value);
+  localStorage.setItem('txlcloud-model', modelSelect.value);
 });
 
 function openSettings() {
@@ -1382,7 +1382,7 @@ const customizeScrim = document.getElementById('customize-scrim');
 const customInstructionsEl = document.getElementById('custom-instructions');
 const customizeSaveBtn = document.getElementById('customize-save-btn');
 
-customInstructionsEl.value = localStorage.getItem('txlclaude-custom-instructions') || '';
+customInstructionsEl.value = localStorage.getItem('txlcloud-custom-instructions') || '';
 
 function openCustomize() {
   customizeModal.classList.add('open');
@@ -1396,7 +1396,7 @@ customizeBtn.addEventListener('click', openCustomize);
 document.getElementById('customize-close-btn').addEventListener('click', closeCustomize);
 customizeScrim.addEventListener('click', closeCustomize);
 customizeSaveBtn.addEventListener('click', () => {
-  localStorage.setItem('txlclaude-custom-instructions', customInstructionsEl.value.trim());
+  localStorage.setItem('txlcloud-custom-instructions', customInstructionsEl.value.trim());
   const old = customizeSaveBtn.textContent;
   customizeSaveBtn.textContent = 'Saved!';
   setTimeout(() => { customizeSaveBtn.textContent = old; closeCustomize(); }, 700);
@@ -1440,12 +1440,12 @@ document.addEventListener('mousedown', (e) => {
 });
 
 /* ---------- Web search toggle ---------- */
-if (localStorage.getItem('txlclaude-websearch') === '1') {
+if (localStorage.getItem('txlcloud-websearch') === '1') {
   websearchToggle.classList.add('active');
 }
 websearchToggle.addEventListener('click', () => {
   const nowActive = websearchToggle.classList.toggle('active');
-  localStorage.setItem('txlclaude-websearch', nowActive ? '1' : '0');
+  localStorage.setItem('txlcloud-websearch', nowActive ? '1' : '0');
 });
 
 /* ---------- Attach a text/code file ---------- */

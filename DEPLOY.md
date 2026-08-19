@@ -2,12 +2,12 @@
 
 `render.yaml` defines **two** free web services - deploy either or both:
 - `txl-analyser` → `app.py` (PDF/YouTube summarizer)
-- `txl-claude` → `chat_app.py` (the chat assistant, with real accounts)
+- `txl-cloud` → `chat_app.py` (the chat assistant, with real accounts)
 
 Both get a free `https://<name>.onrender.com` subdomain automatically -
 reachable from anywhere, no separate domain purchase needed.
 
-## Deploying TXL Claude specifically
+## Deploying TXL Cloud specifically
 
 It has real accounts and persisted chats/projects (`models.py`), backed
 by a database - SQLite locally, but Render's free tier **wipes its own
@@ -16,7 +16,7 @@ database, or every deploy would silently delete everyone's account:
 
 1. Create a free Postgres database at https://neon.tech (no credit card).
 2. In Neon's dashboard, copy the connection string (starts `postgres://...`).
-3. When creating the `txl-claude` service on Render (steps below), set
+3. When creating the `txl-cloud` service on Render (steps below), set
    these environment variables:
    - `DATABASE_URL` — the Neon connection string from step 2
    - `SECRET_KEY` — any long random string (e.g. generate one with
@@ -57,15 +57,15 @@ git push
    historically don't require a credit card — you'll see at signup).
 2. In the Render dashboard: **New +** → **Blueprint**, connect the
    `txl-analyser` GitHub repo. Render reads `render.yaml` and shows both
-   `txl-analyser` and `txl-claude` ready to create together.
+   `txl-analyser` and `txl-cloud` ready to create together.
 3. Before deploying, fill in each service's environment variables (Render
    prompts for the `sync: false` ones from `render.yaml`):
    - **txl-analyser**: `GROQ_API_KEY`, and `SITE_PASSWORD` (**strongly
      recommended** — without one, your site is public and unauthenticated,
      anyone with the URL could burn through your free Groq quota)
-   - **txl-claude**: `GROQ_API_KEY`, `DATABASE_URL` (your Neon connection
+   - **txl-cloud**: `GROQ_API_KEY`, `DATABASE_URL` (your Neon connection
      string), `SECRET_KEY` (a long random string), and optionally
-     `CHAT_GROQ_API_KEY` / `SITE_PASSWORD` — see the TXL Claude section
+     `CHAT_GROQ_API_KEY` / `SITE_PASSWORD` — see the TXL Cloud section
      above for details on each
 4. Click **Apply** / **Deploy**.
 
@@ -78,7 +78,7 @@ vars listed above for that service.
 
 Render will build and deploy — takes a few minutes the first time.
 You'll get free URLs like `https://txl-analyser.onrender.com` and
-`https://txl-claude.onrender.com`.
+`https://txl-cloud.onrender.com`.
 
 ## 3. YouTube summaries on the live site: a known, unavoidable limit — and the free workaround
 
