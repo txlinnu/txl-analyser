@@ -49,6 +49,15 @@ COMBINED_NOTES_CHARS = 6_000  # cap on notes fed into the final synthesis pass
 CHUNK_WORKERS = 2  # transcript chunks summarized in parallel
 MAX_RETRIES = 5
 
+TRANSCRIPT_ERROR_NOTE = """This transcript may contain speech-recognition \
+(ASR) errors - especially garbled technical terms, product/brand names, or \
+jargon that got mistranscribed into a similar-sounding but wrong word (e.g. \
+"Jobex" instead of "Zabbix", a monitoring tool). When a word clearly doesn't \
+fit the context but a real, well-known term that sounds similar does, treat \
+it as the corrected term in your notes instead of repeating the garbled \
+version. Only do this when you're confident - don't guess at unclear \
+non-technical speech."""
+
 CHUNK_SUMMARY_PROMPT = """This is one part of a video transcript (there may \
 be other parts before/after this one). Write detailed notes on what is \
 ACTUALLY SAID in this part - specific facts, steps, settings, numbers, \
@@ -56,6 +65,8 @@ examples, or reasoning mentioned. Do not just name the topics; capture the \
 substance. Use short bullet points. No intro, no "in this part" preamble - \
 just the bullets. If this part is just filler/small talk with no real \
 content, write "No substantive content in this part."
+
+""" + TRANSCRIPT_ERROR_NOTE + """
 
 --- TRANSCRIPT PART ---
 {chunk}
@@ -110,17 +121,23 @@ Do not add information that isn't in the transcript. Do not guess or \
 embellish. Output only the "About this video" line followed by the topic \
 sections - nothing else.
 
+""" + TRANSCRIPT_ERROR_NOTE + """
+
 --- TRANSCRIPT ---
 {transcript}
 """
 
 VERIFY_PROMPT = """You are a fact-checker. Below is a written video \
 summary and the exact source material (transcript notes) it's supposed to \
-be based on.
+be based on. The source is an auto-generated transcript that may itself \
+contain speech-recognition errors in technical terms or brand names (e.g. \
+"Jobex" instead of "Zabbix") - if the summary uses a corrected, real term \
+where the source has an obviously garbled one, that's fine, leave it as-is.
 
 Check EVERY factual claim in the summary against the source material. For \
 each claim:
-- If it's directly supported by the source material, keep it as-is.
+- If it's directly supported by the source material (including the case \
+above, where a garbled term was reasonably corrected), keep it as-is.
 - If it is NOT supported (invented, exaggerated, or from outside \
 knowledge about the topic rather than what this specific video actually \
 said), remove that specific claim or reword the sentence to only state \
