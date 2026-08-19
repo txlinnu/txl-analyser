@@ -6,5 +6,9 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 flask>=3.0.0
 markdown>=3.6
+pygments>=2.17.0
+ollama>=0.3.0     # only needed for chat_app.py with CHAT_BACKEND=ollama (local/unlimited)
+flask-sqlalchemy>=3.1.0
+psycopg2-binary>=2.9.0   # Postgres driver for chat_app.py accounts (e.g. Neon) - not needed for local SQLite dev
 youtube-transcript-api>=1.0.0
 gunicorn>=22.0.0

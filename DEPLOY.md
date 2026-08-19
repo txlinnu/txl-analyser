@@ -1,7 +1,39 @@
-# Deploying TXL Analyser for free (Render)
+# Deploying for free (Render)
 
-Everything's ready to deploy — `render.yaml`, `.gitignore`, and a local
-git commit are already set up. These last steps need your own accounts
+`render.yaml` defines **two** free web services - deploy either or both:
+- `txl-analyser` → `app.py` (PDF/YouTube summarizer)
+- `txl-claude` → `chat_app.py` (the chat assistant, with real accounts)
+
+Both get a free `https://<name>.onrender.com` subdomain automatically -
+reachable from anywhere, no separate domain purchase needed.
+
+## Deploying TXL Claude specifically
+
+It has real accounts and persisted chats/projects (`models.py`), backed
+by a database - SQLite locally, but Render's free tier **wipes its own
+disk on every restart/redeploy**, so production needs a real external
+database, or every deploy would silently delete everyone's account:
+
+1. Create a free Postgres database at https://neon.tech (no credit card).
+2. In Neon's dashboard, copy the connection string (starts `postgres://...`).
+3. When creating the `txl-claude` service on Render (steps below), set
+   these environment variables:
+   - `DATABASE_URL` — the Neon connection string from step 2
+   - `SECRET_KEY` — any long random string (e.g. generate one with
+     `python -c "import secrets; print(secrets.token_hex(32))"`) -
+     without this, sessions use an insecure default and everyone gets
+     logged out on every redeploy
+   - `GROQ_API_KEY` — your Groq key
+   - `CHAT_GROQ_API_KEY` — optional, only if you set up the separate
+     Groq account discussed earlier, to keep its quota independent of
+     TXL Analyser's
+   - `SITE_PASSWORD` — optional extra password gate on top of accounts
+
+**Only the Groq backend can be deployed this way** - Ollama needs real
+GPU/CPU compute running locally, which Render's free tier doesn't provide.
+
+Everything's ready to deploy — `render.yaml` and `.gitignore` are
+already set up. These last steps need your own accounts
 (I can't create accounts or log in on your behalf), so here's exactly
 what to do:
 
@@ -11,44 +43,42 @@ access granted to this repo.
 
 ## 1. Push the code to GitHub
 
-If you don't have a GitHub account yet, create one free at
-https://github.com/signup
-
-Then, from `D:\AI Agents`:
-
-1. Go to https://github.com/new and create a new repository (any name,
-   e.g. `txl-analyser`). Leave it empty — don't add a README.
-2. Copy the commands GitHub shows you under "…or push an existing
-   repository from the command line", something like:
-   ```bash
-   git remote add origin https://github.com/YOUR_USERNAME/txl-analyser.git
-   git branch -M main
-   git push -u origin main
-   ```
-3. Run those in a terminal from `D:\AI Agents`.
+This repo is already connected to
+https://github.com/txlinnu/txl-analyser - just push the latest changes:
+```bash
+git push
+```
+(If asked, `git add` and `git commit` the changed files first.)
 
 ## 2. Deploy on Render
 
+**Easiest: Blueprint deploy (creates both services at once)**
 1. Create a free account at https://render.com (free web services
    historically don't require a credit card — you'll see at signup).
-2. In the Render dashboard: **New +** → **Web Service**, and connect the
-   repo you just pushed. (If Render offers **Blueprint** instead and
-   auto-detects `render.yaml`, use that — it's the same result, just
-   pre-fills the fields below for you.)
-3. If filling in fields manually, use:
-   - **Build Command**: `pip install -r requirements-local.txt`
-   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1`
-   - **Instance Type**: **Free**
-4. Add these environment variables:
-   - `GROQ_API_KEY` — your Groq key (the same one from `.env`)
-   - `SITE_PASSWORD` — **strongly recommended**: pick a password. Without
-     one, your site is public and unauthenticated — anyone with the URL
-     could use it and burn through your free Groq quota, or upload
-     arbitrary files.
-5. Click **Deploy Web Service**.
+2. In the Render dashboard: **New +** → **Blueprint**, connect the
+   `txl-analyser` GitHub repo. Render reads `render.yaml` and shows both
+   `txl-analyser` and `txl-claude` ready to create together.
+3. Before deploying, fill in each service's environment variables (Render
+   prompts for the `sync: false` ones from `render.yaml`):
+   - **txl-analyser**: `GROQ_API_KEY`, and `SITE_PASSWORD` (**strongly
+     recommended** — without one, your site is public and unauthenticated,
+     anyone with the URL could burn through your free Groq quota)
+   - **txl-claude**: `GROQ_API_KEY`, `DATABASE_URL` (your Neon connection
+     string), `SECRET_KEY` (a long random string), and optionally
+     `CHAT_GROQ_API_KEY` / `SITE_PASSWORD` — see the TXL Claude section
+     above for details on each
+4. Click **Apply** / **Deploy**.
+
+**Alternative: create each service manually**, if you'd rather deploy
+just one, or Blueprint isn't available — **New +** → **Web Service** per
+app, filling in Build Command `pip install -r requirements-local.txt`,
+Start Command from `render.yaml` (`gunicorn app:app ...` or
+`gunicorn chat_app:app ...`), Instance Type **Free**, and the same env
+vars listed above for that service.
 
 Render will build and deploy — takes a few minutes the first time.
-You'll get a free URL like `https://txl-analyser.onrender.com`.
+You'll get free URLs like `https://txl-analyser.onrender.com` and
+`https://txl-claude.onrender.com`.
 
 ## 3. YouTube summaries on the live site: a known, unavoidable limit — and the free workaround
 

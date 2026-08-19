@@ -12,3 +12,23 @@ services:
         sync: false
       - key: PROXY_URL
         sync: false
+
+  - type: web
+    name: txl-claude
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-local.txt
+    startCommand: gunicorn chat_app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CHAT_GROQ_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: SITE_PASSWORD
+        sync: false
+      - key: ANALYSER_URL
+        sync: false

@@ -70,6 +70,120 @@ way.** For YouTube, you have two free options:
 
 Details in DEPLOY.md.
 
+## TXL Claude (chat assistant)
+
+A separate, standalone chat app — [`chat_app.py`](chat_app.py) — Claude-style
+multi-turn conversation, streamed replies, sidebar with chat history,
+syntax-highlighted code with a copy button. It runs as its **own process
+on its own port** so it doesn't clash with `app.py`, and has **two
+interchangeable backends**:
+
+| | Groq (default) | Ollama (local) |
+|---|---|---|
+| Agent | [`txl_claude.py`](txl_claude.py) | [`txl_claude_local.py`](txl_claude_local.py) |
+| Cost | Free | Free |
+| Speed | Fast (cloud) | As fast as your own hardware |
+| Daily limit | Yes — Groq's free-tier token cap | **None** |
+| Privacy | Messages sent to Groq's servers | **Nothing ever leaves your machine** |
+| Setup | Free `GROQ_API_KEY` (already set up) | Install [Ollama](https://ollama.com/download) + pull a model |
+
+**Heads up**: by default the Groq backend shares `GROQ_API_KEY` with `app.py`
+(TXL Analyser) — both draw from the same daily free-tier quota, so heavy
+use of one eats into the other's headroom. To give TXL Claude its own
+separate quota, create a second (free) Groq account and set
+`CHAT_GROQ_API_KEY` in `.env` — see `.env.example`. Multiple keys on the
+*same* Groq account still share one quota, so it has to be a different
+account.
+
+### Groq backend (fast, free, has a daily cap)
+
+```bash
+python chat_app.py
+```
+Open **http://127.0.0.1:5001**.
+
+### Ollama backend (unlimited, fully private, needs decent hardware)
+
+One-time setup, on whichever machine will run it:
+1. Install Ollama: https://ollama.com/download
+2. Pull a model:
+   ```bash
+   ollama pull qwen2.5:7b
+   ollama pull qwen2.5:14b   # optional - bigger/more accurate, slower
+   ```
+3. `pip install -r requirements-local.txt` (includes the `ollama` package)
+
+Then run:
+
+**bash:**
+```bash
+CHAT_BACKEND=ollama CHAT_PORT=5002 python chat_app.py
+```
+**PowerShell:**
+```powershell
+$env:CHAT_BACKEND='ollama'; $env:CHAT_PORT='5002'; python chat_app.py
+```
+
+Open **http://127.0.0.1:5002**. Sized for ~32GB RAM + a small (~4GB) GPU —
+Ollama automatically offloads what fits onto the GPU and runs the rest on
+CPU. Expect noticeably slower replies than Groq (a few tokens/second on
+that kind of hardware vs near-instant) — that's the trade for unlimited
+and fully private. If it feels slow, use the "Balanced" (`qwen2.5:7b`)
+model in the dropdown instead of "Accurate" (`qwen2.5:14b`).
+
+### Notes for both
+
+Conversation history is kept in memory only, tied to your browser
+session — nothing written to disk. Click "New chat" to start a fresh
+thread (past ones stay in the sidebar until the process restarts).
+
+Sidebar extras:
+- **Pin** a chat (📌 on hover) to keep it at the top, or **📁 move it into
+  a Project** to group related chats — make a project with the **+** next
+  to "Projects".
+- **🗄 Artifacts** (in the sidebar) is a gallery of every code block 5+
+  lines long TXL Claude has written this session, across all chats and
+  Code mode, with copy/download.
+- **🎨 Customize** lets you set standing instructions (tone, preferred
+  language, etc.) that get added to every message in Chat mode - saved
+  in your browser only. Doesn't apply to Code mode, which already has its
+  own specialized instructions.
+
+You can run `app.py` (port 5000), `chat_app.py` (Groq, port 5001), and a
+second `chat_app.py` (Ollama, port 5002) all at once in separate
+terminals — the "← TXL Analyser" link in chat's sidebar points back to
+`app.py`. If you change ports, set `ANALYSER_URL` (for chat_app.py) or
+edit the link in `index.html` (for app.py) to match.
+
+### Code mode - a small coding agent
+
+Click the **"⌨ Code"** tab in TXL Claude's sidebar (or go to `/code`) for
+a real coding-agent mode, similar in spirit to Claude Code itself: the
+model can list directories, read files, write files, and run shell
+commands — using [`code_agent.py`](code_agent.py) and whichever chat
+backend (Groq or Ollama) that instance is running.
+
+**Safety model:**
+- Everything is confined to a sandboxed workspace folder
+  (`workspace/` next to this file by default — point it at a real project
+  by setting `CODE_WORKSPACE` to that folder's path). Paths that try to
+  escape it are rejected.
+- `list_directory` / `read_file` run automatically (read-only).
+- `write_file` / `run_command` **always** stop and show you exactly what's
+  about to happen first — a diff for file writes, the exact command for
+  shell commands — and wait for you to click **Approve** or **Deny**.
+  Nothing touches disk or runs until you approve it.
+
+One real limitation worth knowing: small/free models (especially local
+ones like `qwen2.5:7b`) can occasionally *claim* they ran a command or
+wrote a file in a compound request without actually calling the tool —
+the system prompt tells it not to do this, but it isn't foolproof with
+smaller models. Nothing unapproved ever actually executes either way
+(the approval gate isn't something the model can talk its way around) —
+just don't take a wordy "done!" at face value if no action card or
+approval prompt showed up for it. Simple, one-thing-at-a-time requests
+are noticeably more reliable than asking for several actions at once.
+
 ## Command line
 
 ### PDF summarizer

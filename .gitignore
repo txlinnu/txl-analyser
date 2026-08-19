@@ -5,3 +5,7 @@ uploads/*
 !uploads/.gitkeep
 *.summary.md
 scratch_*
+instance/
+*.db
+workspace/
+*.log

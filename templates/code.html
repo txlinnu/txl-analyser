@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TXL Claude - Code</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%2290%22 fill=%22%23C15F3C%22>✦</text></svg>">
+<style>
+  {{ pygments_css | safe }}
+  :root {
+    --sidebar-bg: #F0EEE6;
+    --sidebar-border: #E5E1D6;
+    --main-bg: #FAF9F6;
+    --card: #ffffff;
+    --text: #3D3929;
+    --muted: #837F72;
+    --border: #E5E1D6;
+    --accent: #C15F3C;
+    --accent-hover: #A94F30;
+    --accent-soft: #F3E3D8;
+    --user-bubble: #F0EEE6;
+    --code-bg: #F0EEE6;
+    --shadow: 0 1px 2px rgba(61,57,41,0.04), 0 8px 24px rgba(61,57,41,0.05);
+    --danger-bg: #FBEAE7;
+    --danger-text: #B23B1F;
+    --danger-border: #F0C9BE;
+    --diff-add-bg: #E3F5E6; --diff-add-text: #1E7B34;
+    --diff-del-bg: #FCE8E6; --diff-del-text: #B23B1F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --sidebar-bg: #201F1D; --sidebar-border: #33312C; --main-bg: #262624;
+      --card: #2D2C29; --text: #E8E6DC; --muted: #9A9587; --border: #3A3833;
+      --accent: #D97757; --accent-hover: #E68A6C; --accent-soft: #3A2A20;
+      --user-bubble: #33312C; --code-bg: #1C1B19;
+      --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.3);
+      --danger-bg: #3A241E; --danger-text: #FF9E82; --danger-border: #5A3428;
+      --diff-add-bg: #163422; --diff-add-text: #5FCC7E;
+      --diff-del-bg: #3A1E1E; --diff-del-text: #FF9E82;
+    }
+  }
+  :root[data-theme="dark"] {
+    --sidebar-bg: #201F1D; --sidebar-border: #33312C; --main-bg: #262624;
+    --card: #2D2C29; --text: #E8E6DC; --muted: #9A9587; --border: #3A3833;
+    --accent: #D97757; --accent-hover: #E68A6C; --accent-soft: #3A2A20;
+    --user-bubble: #33312C; --code-bg: #1C1B19;
+    --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.3);
+    --danger-bg: #3A241E; --danger-text: #FF9E82; --danger-border: #5A3428;
+    --diff-add-bg: #163422; --diff-add-text: #5FCC7E;
+    --diff-del-bg: #3A1E1E; --diff-del-text: #FF9E82;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--main-bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .app-shell { display: flex; height: 100vh; overflow: hidden; }
+
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 6px 8px 18px; font-weight: 700; font-size: 1.02rem; }
+  .brand .mark { color: var(--accent); font-size: 1.15rem; }
+  .backend-badge {
+    font-size: 0.7rem; font-weight: 600; color: var(--accent); background: var(--accent-soft);
+    border: 1px solid var(--border); padding: 3px 9px; border-radius: 999px; display: inline-block;
+    margin: -6px 0 14px 8px;
+  }
+  .mode-tabs { display: flex; gap: 4px; background: var(--border); border-radius: 9px; padding: 3px; margin-bottom: 14px; }
+  .mode-tab { flex: 1; text-align: center; padding: 6px 0; border-radius: 7px; font-size: 0.8rem; font-weight: 600; color: var(--muted); text-decoration: none; }
+  .mode-tab.active { background: var(--card); color: var(--text); }
+  .mode-tab:not(.active):hover { color: var(--text); }
+  .nav-link {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    padding: 7px 8px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    color: var(--text); text-decoration: none; margin-bottom: 4px; background: none; border: none;
+    font-family: inherit; cursor: pointer;
+  }
+  .nav-link:hover { background: var(--border); }
+
+  .new-chat-pill {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text);
+    font-size: 0.87rem; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+  }
+  .new-chat-pill:hover { border-color: var(--accent); color: var(--accent); }
+
+  .workspace-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .workspace-box .label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px; }
+  .workspace-box .path { font-size: 0.76rem; word-break: break-all; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+
+  .sidebar-search {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); font-size: 0.82rem; margin-bottom: 14px; outline: none;
+  }
+  .sidebar-search:focus { border-color: var(--accent); }
+
+  .conv-list-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 4px 8px 6px; }
+  .conv-list { flex: 1; overflow-y: auto; }
+  .conv-item { display: flex; align-items: center; gap: 4px; border-radius: 8px; margin-bottom: 2px; }
+  .conv-item:hover { background: var(--border); }
+  .conv-item.active { background: var(--accent-soft); }
+  .conv-item.active .conv-link { color: var(--accent); font-weight: 600; }
+  .conv-link {
+    flex: 1; min-width: 0; padding: 8px 4px 8px 10px; color: var(--text); text-decoration: none;
+    font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .conv-rename-input {
+    flex: 1; min-width: 0; margin: 4px; padding: 4px 6px; font-size: 0.86rem; font-family: inherit;
+    border: 1px solid var(--accent); border-radius: 6px; background: var(--card); color: var(--text); outline: none;
+  }
+  .conv-actions { display: none; gap: 0; padding-right: 6px; flex-shrink: 0; }
+  .conv-item:hover .conv-actions { display: flex; }
+  .conv-action { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; padding: 4px 5px; border-radius: 5px; line-height: 1; }
+  .conv-action:hover { color: var(--accent); background: var(--card); }
+  .conv-action.pin-btn { opacity: 0.35; }
+  .conv-action.pin-btn.pinned, .conv-action.pin-btn:hover { opacity: 1; }
+  .conv-action.pin-btn.pinned { color: var(--accent); }
+  .conv-empty, .conv-no-results { padding: 8px 10px; font-size: 0.8rem; color: var(--muted); }
+
+  .projects-label { display: flex; align-items: center; justify-content: space-between; }
+  .projects-label button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; padding: 2px 5px; border-radius: 5px; line-height: 1; }
+  .projects-label button:hover { color: var(--accent); background: var(--card); }
+  .project-group { margin-bottom: 4px; }
+  .project-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 0.83rem; font-weight: 600; cursor: pointer; border-radius: 8px; }
+  .project-head:hover { background: var(--border); }
+  .project-head .project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-toggle { font-size: 0.7rem; color: var(--muted); transition: transform 0.15s ease; flex-shrink: 0; }
+  .project-group.collapsed .project-toggle { transform: rotate(-90deg); }
+  .project-group.collapsed .project-items { display: none; }
+  .project-items { padding-left: 14px; }
+  .project-delete-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.72rem; padding: 2px 5px; border-radius: 5px; flex-shrink: 0; opacity: 0; }
+  .project-head:hover .project-delete-btn { opacity: 1; }
+  .project-delete-btn:hover { color: var(--danger-text); background: var(--card); }
+
+  .project-menu {
+    position: fixed; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 6px; z-index: 40; min-width: 180px; max-height: 260px; overflow-y: auto;
+  }
+  .project-menu button { display: block; width: 100%; text-align: left; padding: 7px 9px; border: none; background: none; color: var(--text); font-size: 0.83rem; border-radius: 6px; cursor: pointer; font-family: inherit; }
+  .project-menu button:hover { background: var(--border); }
+  .project-menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+  .sidebar-footer { border-top: 1px solid var(--sidebar-border); padding-top: 12px; margin-top: 8px; }
+  .user-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px 10px; font-size: 0.78rem; }
+  .user-email { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-row form { flex-shrink: 0; }
+  .logout-btn { border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 0.72rem; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+  .logout-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  .sidebar-toggle {
+    display: none; position: fixed; top: 14px; left: 14px; z-index: 20;
+    width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); cursor: pointer; font-size: 1rem;
+  }
+  .sidebar-scrim { display: none; }
+  @media (max-width: 760px) {
+    .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 21; margin-left: -280px; box-shadow: var(--shadow); transition: margin-left 0.2s ease; }
+    .sidebar.open { margin-left: 0; }
+    .sidebar-toggle { display: flex; align-items: center; justify-content: center; }
+    .sidebar-scrim.open { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 20; }
+  }
+
+  .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-header { display: flex; justify-content: flex-end; padding: 12px 20px; flex-shrink: 0; }
+  select.model-select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); font-size: 0.8rem; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 4px 20px 12px; }
+  .msgs-wrap { max-width: 780px; margin: 0 auto; }
+
+  .empty-state { max-width: 520px; margin: 12vh auto 0; text-align: center; color: var(--muted); }
+  .empty-state .mark { font-size: 2.1rem; color: var(--accent); }
+  .empty-state h2 { color: var(--text); font-size: 1.5rem; margin: 10px 0 8px; }
+  .empty-state p { font-size: 0.92rem; margin: 0; }
+
+  .msg { display: flex; margin-bottom: 20px; animation: fadeIn 0.25s ease; }
+  .msg.user { justify-content: flex-end; }
+  .msg .bubble { max-width: 82%; padding: 12px 16px; border-radius: 14px; font-size: 0.94rem; white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user .bubble { background: var(--user-bubble); }
+  .msg.assistant { align-items: flex-start; gap: 10px; max-width: 100%; }
+  .msg.assistant .avatar {
+    width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 0.85rem; margin-top: 2px;
+  }
+  .msg.assistant .bubble { background: transparent; padding: 4px 0; max-width: calc(100% - 36px); }
+  .msg.assistant .bubble.streaming::after { content: "▍"; animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .bubble h1, .bubble h2, .bubble h3 { font-size: 1.02rem; margin: 14px 0 6px; }
+  .bubble h1:first-child, .bubble h2:first-child, .bubble h3:first-child { margin-top: 0; }
+  .bubble p { margin: 0 0 10px; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul, .bubble ol { padding-left: 22px; margin: 0 0 10px; }
+  .bubble a { color: var(--accent); }
+  .bubble code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; font-size: 0.85em; }
+  .bubble pre { position: relative; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; padding-top: 30px; overflow-x: auto; margin: 8px 0; }
+  .bubble pre code { background: none; padding: 0; }
+  .bubble .codehilite { margin: 8px 0; }
+  .bubble .codehilite pre { margin: 0; }
+  .copy-btn {
+    position: absolute; top: 6px; right: 8px; border: 1px solid var(--border); background: var(--card);
+    color: var(--muted); font-size: 0.72rem; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ---- Action cards (completed tool calls) ---- */
+  .action-card { max-width: 100%; margin: 0 0 20px 36px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); overflow: hidden; animation: fadeIn 0.25s ease; }
+  .action-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 0.84rem; cursor: pointer; user-select: none; }
+  .action-head .icon { flex-shrink: 0; }
+  .action-head .summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .action-head .chevron { color: var(--muted); font-size: 0.75rem; transition: transform 0.15s ease; }
+  .action-card.expanded .chevron { transform: rotate(90deg); }
+  .action-body { display: none; border-top: 1px solid var(--border); padding: 10px 12px; }
+  .action-card.expanded .action-body { display: block; }
+  .action-body pre {
+    margin: 0; padding: 10px; background: var(--code-bg); border-radius: 8px; font-size: 0.8rem;
+    max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+
+  /* ---- Pending approval card ---- */
+  .pending-card { max-width: 100%; margin: 0 0 20px 36px; border: 1.5px solid var(--accent); border-radius: 10px; background: var(--card); overflow: hidden; animation: fadeIn 0.25s ease; }
+  .pending-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 0.85rem; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+  .pending-body { padding: 12px; }
+  .pending-body .cmd {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.84rem;
+    background: var(--code-bg); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .diff-view {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.78rem;
+    background: var(--code-bg); border-radius: 8px; padding: 8px 0; max-height: 320px; overflow: auto;
+  }
+  .diff-line { padding: 1px 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff-add { background: var(--diff-add-bg); color: var(--diff-add-text); }
+  .diff-del { background: var(--diff-del-bg); color: var(--diff-del-text); }
+  .diff-hunk { color: var(--muted); }
+  .pending-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .approve-btn, .deny-btn {
+    flex: 1; padding: 9px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+  }
+  .approve-btn { background: var(--accent); color: #fff; }
+  .approve-btn:hover { background: var(--accent-hover); }
+  .deny-btn { background: var(--card); color: var(--text); border-color: var(--border); }
+  .deny-btn:hover { border-color: var(--danger-text); color: var(--danger-text); }
+  .approve-btn:disabled, .deny-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .error-note { max-width: 780px; margin: 0 auto 16px; background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 10px; padding: 11px 14px; font-size: 0.86rem; }
+
+  #composer-outer { flex-shrink: 0; padding: 10px 20px 22px; }
+  .composer-inner { max-width: 780px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 10px 10px 10px 16px; box-shadow: var(--shadow); }
+  #input { flex: 1; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 0.94rem; resize: none; outline: none; max-height: 200px; padding: 8px 0; }
+  button.send-btn { flex-shrink: 0; width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  button.send-btn:hover { background: var(--accent-hover); }
+  button.send-btn:disabled { opacity: 0.4; cursor: default; }
+  .footnote { max-width: 780px; margin: 8px auto 0; text-align: center; font-size: 0.72rem; color: var(--muted); }
+
+  /* ---- Reply-to-selection popup ---- */
+  .reply-popup {
+    position: fixed; z-index: 45; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow); padding: 4px;
+  }
+  .reply-popup button {
+    border: none; background: none; color: var(--text); font-size: 0.82rem; font-weight: 600;
+    padding: 6px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  }
+  .reply-popup button:hover { background: var(--accent-soft); color: var(--accent); }
+  .quoted-reply {
+    max-width: 780px; margin: 0 auto 8px; display: flex; align-items: flex-start; gap: 8px;
+    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 8px 10px; font-size: 0.82rem; color: var(--muted);
+  }
+  .quoted-reply .text { flex: 1; min-width: 0; max-height: 60px; overflow-y: auto; white-space: pre-wrap; }
+  .quoted-reply button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; flex-shrink: 0; }
+  .quoted-reply button:hover { color: var(--danger-text); }
+</style>
+</head>
+<body>
+
+{% macro conv_item(c) %}
+<div class="conv-item {{ 'active' if c.active }}" data-id="{{ c.id }}">
+  <a class="conv-link" href="/code?c={{ c.id }}">{{ c.title }}</a>
+  <div class="conv-actions">
+    <button class="conv-action pin-btn {{ 'pinned' if c.pinned }}" type="button" title="{{ 'Unpin' if c.pinned else 'Pin' }}">📌</button>
+    <button class="conv-action project-btn" type="button" title="Move to project">📁</button>
+    <button class="conv-action rename-btn" type="button" title="Rename">✎</button>
+    <button class="conv-action delete-btn" type="button" title="Delete">🗑</button>
+  </div>
+</div>
+{% endmacro %}
+
+<button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+<div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="mark">✦</span> TXL Claude</div>
+    <div class="backend-badge">{{ header_badge }}</div>
+    <div class="mode-tabs">
+      <a class="mode-tab" href="/">🏠 Home</a>
+      <a class="mode-tab active" href="/code">⌨ Code</a>
+    </div>
+    <button class="new-chat-pill" id="new-chat-btn" type="button">＋ New session</button>
+    <a class="nav-link" href="/artifacts">🗄 Artifacts</a>
+    <div class="workspace-box">
+      <div class="label">Workspace</div>
+      <div class="path">{{ workspace }}</div>
+    </div>
+    <input class="sidebar-search" id="sidebar-search" type="text" placeholder="Search sessions...">
+
+    <div class="conv-list" id="conv-list">
+      {% if pinned %}
+        <div class="conv-list-label">📌 Pinned</div>
+        <div class="conv-group-items">
+          {% for c in pinned %}{{ conv_item(c) }}{% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="conv-list-label projects-label">
+        <span>Projects</span>
+        <button id="new-project-btn" type="button" title="New project">＋</button>
+      </div>
+      {% for proj in projects %}
+        <div class="project-group" data-project-id="{{ proj.id }}">
+          <div class="project-head">
+            <span class="project-toggle">▾</span>
+            <span class="project-name">📁 {{ proj.name }}</span>
+            <button class="project-delete-btn" type="button" title="Delete project">✕</button>
+          </div>
+          <div class="conv-group-items project-items">
+            {% for c in proj.chats %}{{ conv_item(c) }}{% endfor %}
+            {% if not proj.chats %}<div class="conv-empty">No sessions here yet</div>{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+
+      <div class="conv-list-label">Sessions</div>
+      <div class="conv-group-items" id="ungrouped-list">
+        {% for c in ungrouped %}{{ conv_item(c) }}{% endfor %}
+        {% if not ungrouped and not pinned and not projects %}<div class="conv-empty">No sessions yet</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <span class="user-email" title="{{ user_email }}">{{ user_email }}</span>
+        <form method="POST" action="/logout"><button type="submit" class="logout-btn">Log out</button></form>
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat-main" id="chat-main">
+    <div class="chat-header">
+      <select class="model-select" id="model-select">
+        {% for value, label in model_choices %}
+          <option value="{{ value }}" {{ 'selected' if value == current_model }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="messages">
+      <div class="msgs-wrap" id="msgs-wrap">
+        {% if not transcript %}
+          <div class="empty-state" id="empty-state">
+            <div class="mark">⌨</div>
+            <h2>What should I build?</h2>
+            <p>I can look at, edit, and run things inside <code>{{ workspace }}</code> - every file write and command asks for your OK first.</p>
+          </div>
+        {% endif %}
+        {% for item in transcript %}
+          {% if item.kind == 'user' %}
+            <div class="msg user"><div class="bubble">{{ item.text }}</div></div>
+          {% elif item.kind == 'assistant' %}
+            <div class="msg assistant"><div class="avatar">✦</div><div class="bubble">{{ item.html | safe }}</div></div>
+          {% elif item.kind == 'action' %}
+            <div class="action-card" data-kind="{{ item.name }}"></div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="composer-outer">
+      {% if pending %}
+        <div id="pending-slot"></div>
+      {% endif %}
+      <div id="quoted-slot"></div>
+      <div class="composer-inner">
+        <textarea id="input" rows="1" placeholder="Ask TXL Claude to build or change something..." autofocus></textarea>
+        <button class="send-btn" id="send-btn" type="button" aria-label="Send">➤</button>
+      </div>
+      <p class="footnote">File writes and commands only run after you click Approve. Nothing outside the workspace folder is reachable.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+const TRANSCRIPT_ACTIONS = {{ transcript | selectattr('kind', 'equalto', 'action') | list | tojson }};
+const INITIAL_PENDING = {{ (pending | tojson) if pending else 'null' }};
+const PROJECTS = {{ projects | tojson }};
+
+const chatMain = document.getElementById('chat-main');
+const messagesEl = document.getElementById('messages');
+const wrapEl = document.getElementById('msgs-wrap');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send-btn');
+const modelSelect = document.getElementById('model-select');
+const newChatBtn = document.getElementById('new-chat-btn');
+const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarScrim = document.getElementById('sidebar-scrim');
+const composerOuter = document.getElementById('composer-outer');
+const convList = document.getElementById('conv-list');
+const ungroupedList = document.getElementById('ungrouped-list');
+const sidebarSearch = document.getElementById('sidebar-search');
+const quotedSlot = document.getElementById('quoted-slot');
+
+let currentConvId = {{ (active_id | tojson) if active_id else 'null' }};
+let busy = false;
+let currentPendingCard = null;
+
+function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function actionMeta(kind) {
+  return {
+    list_directory: { icon: '📂', verb: 'Listed' },
+    read_file: { icon: '📄', verb: 'Read' },
+    write_file: { icon: '✏️', verb: 'Wrote' },
+    run_command: { icon: '⚡', verb: 'Ran' },
+  }[kind] || { icon: '🔧', verb: kind };
+}
+
+function actionSummary(kind, args) {
+  const meta = actionMeta(kind);
+  if (kind === 'run_command') return meta.verb + ': ' + (args.command || '');
+  if (kind === 'list_directory') return meta.verb + ': ' + (args.path || '.');
+  return meta.verb + ': ' + (args.path || '');
+}
+
+function buildActionCard(kind, args, result) {
+  const card = document.createElement('div');
+  card.className = 'action-card';
+  card.dataset.kind = kind;
+  const meta = actionMeta(kind);
+  card.innerHTML =
+    '<div class="action-head">' +
+      '<span class="icon">' + meta.icon + '</span>' +
+      '<span class="summary"></span>' +
+      '<span class="chevron">›</span>' +
+    '</div>' +
+    '<div class="action-body"><pre></pre></div>';
+  card.querySelector('.summary').textContent = actionSummary(kind, args);
+  card.querySelector('.action-body pre').textContent = result || '(no output)';
+  card.querySelector('.action-head').addEventListener('click', () => card.classList.toggle('expanded'));
+  return card;
+}
+
+function buildDiffHtml(diffText) {
+  return diffText.split('\n').map(line => {
+    let cls = 'diff-ctx';
+    if (line.startsWith('+++') || line.startsWith('---')) cls = 'diff-hunk';
+    else if (line.startsWith('@@')) cls = 'diff-hunk';
+    else if (line.startsWith('+')) cls = 'diff-add';
+    else if (line.startsWith('-')) cls = 'diff-del';
+    return '<div class="diff-line ' + cls + '">' + escapeHtml(line || ' ') + '</div>';
+  }).join('');
+}
+
+function buildPendingCard(pending) {
+  const card = document.createElement('div');
+  card.className = 'pending-card';
+  const meta = actionMeta(pending.kind);
+  let bodyHtml = '';
+  if (pending.kind === 'write_file') {
+    const label = pending.is_new ? 'New file' : 'Edit file';
+    bodyHtml =
+      '<div style="font-family:ui-monospace,Consolas,monospace;font-size:0.82rem;margin-bottom:8px;">' +
+        label + ': <strong>' + escapeHtml(pending.path || '') + '</strong>' +
+      '</div>' +
+      '<div class="diff-view">' + buildDiffHtml(pending.diff || '') + '</div>';
+  } else if (pending.kind === 'run_command') {
+    bodyHtml = '<div class="cmd">' + escapeHtml(pending.command || '') + '</div>';
+  } else {
+    bodyHtml = '<div class="cmd">' + escapeHtml(JSON.stringify(pending.args || {})) + '</div>';
+  }
+  card.innerHTML =
+    '<div class="pending-head">' + meta.icon + ' Wants to ' + (pending.kind === 'write_file' ? 'write a file' : 'run a command') + '</div>' +
+    '<div class="pending-body">' + bodyHtml +
+      '<div class="pending-actions">' +
+        '<button class="approve-btn" type="button">✓ Approve</button>' +
+        '<button class="deny-btn" type="button">✕ Deny</button>' +
+      '</div>' +
+    '</div>';
+  card.querySelector('.approve-btn').addEventListener('click', () => resolvePending(card, true));
+  card.querySelector('.deny-btn').addEventListener('click', () => resolvePending(card, false));
+  return card;
+}
+
+function enhanceCodeBlocks(root) {
+  root.querySelectorAll('pre').forEach(pre => {
+    if (pre.dataset.enhanced) return;
+    pre.dataset.enhanced = '1';
+    if (pre.closest('.action-body') || pre.closest('.pending-body')) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      const codeEl = pre.querySelector('code');
+      const text = codeEl ? codeEl.innerText : pre.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+}
+
+function addUserMessage(text) {
+  chatMain.classList.remove('landing');
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML = '<div class="bubble"></div>';
+  div.querySelector('.bubble').textContent = text;
+  wrapEl.appendChild(div);
+  scrollToBottom();
+}
+
+function addAssistantHtml(html) {
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.innerHTML = '<div class="avatar">✦</div><div class="bubble"></div>';
+  div.querySelector('.bubble').innerHTML = html;
+  wrapEl.appendChild(div);
+  enhanceCodeBlocks(div);
+  scrollToBottom();
+}
+
+function addErrorNote(message) {
+  const div = document.createElement('div');
+  div.className = 'error-note';
+  div.textContent = '⚠️ ' + message;
+  wrapEl.appendChild(div);
+  scrollToBottom();
+}
+
+function addConvToSidebar(id, title) {
+  const empty = ungroupedList.querySelector('.conv-empty');
+  if (empty) empty.remove();
+  convList.querySelectorAll('.conv-item.active').forEach(el => el.classList.remove('active'));
+  const row = document.createElement('div');
+  row.className = 'conv-item active';
+  row.dataset.id = id;
+  row.innerHTML =
+    '<a class="conv-link" href="/code?c=' + id + '"></a>' +
+    '<div class="conv-actions">' +
+      '<button class="conv-action pin-btn" type="button" title="Pin">📌</button>' +
+      '<button class="conv-action project-btn" type="button" title="Move to project">📁</button>' +
+      '<button class="conv-action rename-btn" type="button" title="Rename">✎</button>' +
+      '<button class="conv-action delete-btn" type="button" title="Delete">🗑</button>' +
+    '</div>';
+  row.querySelector('.conv-link').textContent = title;
+  ungroupedList.prepend(row);
+}
+
+function autosize() {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
+}
+inputEl.addEventListener('input', autosize);
+
+function setBusy(v) {
+  busy = v;
+  sendBtn.disabled = v;
+  inputEl.disabled = v;
+}
+
+async function streamEvents(resp) {
+  if (!resp.ok || !resp.body) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.error || 'Something went wrong.');
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+    for (const part of parts) {
+      if (!part.startsWith('data: ')) continue;
+      const payload = JSON.parse(part.slice(6));
+      if (payload.error) {
+        addErrorNote(payload.error);
+      } else if (payload.conv_id) {
+        currentConvId = payload.conv_id;
+        history.pushState({}, '', '/code?c=' + payload.conv_id);
+        addConvToSidebar(payload.conv_id, payload.title);
+      } else if (payload.action) {
+        wrapEl.appendChild(buildActionCard(payload.action.kind, payload.action.args, payload.action.result));
+        scrollToBottom();
+      } else if (payload.pending) {
+        currentPendingCard = buildPendingCard(payload.pending);
+        composerOuter.insertBefore(currentPendingCard, composerOuter.firstChild);
+      } else if (payload.done) {
+        addAssistantHtml(payload.html);
+      } else if (payload.executed !== undefined) {
+        if (currentPendingCard) { currentPendingCard.remove(); currentPendingCard = null; }
+      }
+    }
+  }
+}
+
+async function sendMessage() {
+  let text = inputEl.value.trim();
+  if (!text || busy) return;
+  const quote = quotedSlot.querySelector('.text');
+  if (quote) {
+    text = '> ' + quote.textContent.replace(/\n/g, '\n> ') + '\n\n' + text;
+    quotedSlot.innerHTML = '';
+  }
+  const emptyState = document.getElementById('empty-state');
+  if (emptyState) emptyState.remove();
+
+  setBusy(true);
+  inputEl.value = '';
+  autosize();
+  addUserMessage(text);
+
+  try {
+    const resp = await fetch('/code/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, model: modelSelect.value, conv_id: currentConvId }),
+    });
+    await streamEvents(resp);
+  } catch (err) {
+    addErrorNote(err.message || 'Something went wrong.');
+  } finally {
+    setBusy(false);
+    inputEl.focus();
+  }
+}
+
+async function resolvePending(card, approved) {
+  const buttons = card.querySelectorAll('button');
+  buttons.forEach(b => b.disabled = true);
+  setBusy(true);
+  try {
+    const resp = await fetch(approved ? '/code/approve' : '/code/deny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conv_id: currentConvId, model: modelSelect.value }),
+    });
+    await streamEvents(resp);
+  } catch (err) {
+    addErrorNote(err.message || 'Something went wrong.');
+  } finally {
+    setBusy(false);
+    inputEl.focus();
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+newChatBtn.addEventListener('click', () => { window.location.href = '/code'; });
+
+sidebarToggle.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  sidebarScrim.classList.toggle('open');
+});
+sidebarScrim.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  sidebarScrim.classList.remove('open');
+});
+
+/* ---------- Sidebar search ---------- */
+sidebarSearch.addEventListener('input', () => {
+  const q = sidebarSearch.value.trim().toLowerCase();
+  let anyVisible = false;
+  convList.querySelectorAll('.conv-item').forEach(row => {
+    const title = row.querySelector('.conv-link').textContent.toLowerCase();
+    const match = !q || title.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) anyVisible = true;
+  });
+  let noResults = convList.querySelector('.conv-no-results');
+  if (!anyVisible && q) {
+    if (!noResults) {
+      noResults = document.createElement('div');
+      noResults.className = 'conv-no-results';
+      noResults.textContent = 'No sessions match "' + sidebarSearch.value.trim() + '"';
+      convList.appendChild(noResults);
+    }
+  } else if (noResults) {
+    noResults.remove();
+  }
+});
+
+/* ---------- Projects ---------- */
+function closeProjectMenu() {
+  const existing = document.querySelector('.project-menu');
+  if (existing) existing.remove();
+}
+
+function openProjectMenu(convId, anchorEl) {
+  closeProjectMenu();
+  const menu = document.createElement('div');
+  menu.className = 'project-menu';
+  let html = '';
+  PROJECTS.forEach(p => { html += '<button data-pid="' + p.id + '">📁 ' + escapeHtml(p.name) + '</button>'; });
+  if (PROJECTS.length) html += '<hr>';
+  html += '<button data-pid="">— Remove from project —</button>';
+  html += '<button data-new="1">＋ New project…</button>';
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8) + 'px';
+  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+
+  menu.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.new !== undefined) {
+      const name = prompt('New project name:');
+      closeProjectMenu();
+      if (!name || !name.trim()) return;
+      const resp = await fetch('/projects/new', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        await fetch('/conv/' + convId + '/project', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: data.id }),
+        });
+        window.location.reload();
+      }
+      return;
+    }
+    const pid = btn.dataset.pid || null;
+    closeProjectMenu();
+    await fetch('/conv/' + convId + '/project', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid }),
+    });
+    window.location.reload();
+  });
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.project-menu') && !e.target.closest('.project-btn')) closeProjectMenu();
+});
+
+document.getElementById('new-project-btn').addEventListener('click', async () => {
+  const name = prompt('New project name:');
+  if (!name || !name.trim()) return;
+  const resp = await fetch('/projects/new', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+  const data = await resp.json();
+  if (data.ok) window.location.reload();
+});
+
+document.querySelectorAll('.project-head').forEach(head => {
+  head.addEventListener('click', (e) => {
+    if (e.target.closest('.project-delete-btn')) return;
+    head.closest('.project-group').classList.toggle('collapsed');
+  });
+});
+document.querySelectorAll('.project-delete-btn').forEach(btn => {
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm('Delete this project? Its sessions stay, just ungrouped.')) return;
+    const pid = btn.closest('.project-group').dataset.projectId;
+    await fetch('/projects/' + pid + '/delete', { method: 'POST' });
+    window.location.reload();
+  });
+});
+
+/* ---------- Rename / delete / pin ---------- */
+convList.addEventListener('click', async (e) => {
+  const renameBtn = e.target.closest('.rename-btn');
+  const deleteBtn = e.target.closest('.delete-btn');
+  const pinBtn = e.target.closest('.pin-btn');
+  const projectBtn = e.target.closest('.project-btn');
+  if (!renameBtn && !deleteBtn && !pinBtn && !projectBtn) return;
+  const row = e.target.closest('.conv-item');
+  const id = row.dataset.id;
+
+  if (pinBtn) {
+    await fetch('/conv/' + id + '/pin', { method: 'POST' });
+    window.location.reload();
+    return;
+  }
+  if (projectBtn) {
+    openProjectMenu(id, projectBtn);
+    return;
+  }
+  if (deleteBtn) {
+    if (!confirm('Delete this session? This can\'t be undone.')) return;
+    try {
+      await fetch('/conv/' + id + '/delete', { method: 'POST' });
+      const wasActive = String(currentConvId) === String(id);
+      row.remove();
+      if (!ungroupedList.querySelector('.conv-item') && !convList.querySelector('.conv-item')) {
+        ungroupedList.insertAdjacentHTML('afterbegin', '<div class="conv-empty">No sessions yet</div>');
+      }
+      if (wasActive) window.location.href = '/code';
+    } catch (err) { /* ignore - row stays if the request failed */ }
+    return;
+  }
+  if (renameBtn) {
+    const link = row.querySelector('.conv-link');
+    const oldTitle = link.textContent;
+    const input = document.createElement('input');
+    input.className = 'conv-rename-input';
+    input.value = oldTitle;
+    link.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const commit = async () => {
+      const newTitle = input.value.trim() || oldTitle;
+      try {
+        await fetch('/conv/' + id + '/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newTitle }),
+        });
+      } catch (err) { /* keep local edit even if the request failed */ }
+      const newLink = document.createElement('a');
+      newLink.className = 'conv-link';
+      newLink.href = '/code?c=' + id;
+      newLink.textContent = newTitle;
+      input.replaceWith(newLink);
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+      if (ev.key === 'Escape') { input.value = oldTitle; input.blur(); }
+    });
+    input.addEventListener('blur', commit, { once: true });
+  }
+});
+
+/* ---------- Reply to a highlighted selection ---------- */
+let replyPopup = null;
+function closeReplyPopup() { if (replyPopup) { replyPopup.remove(); replyPopup = null; } }
+
+document.addEventListener('mouseup', (e) => {
+  const targetEl = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement;
+  if (targetEl && targetEl.closest('.reply-popup')) return;
+  const sel = window.getSelection();
+  const text = sel ? sel.toString().trim() : '';
+  if (!text || !sel.rangeCount) { closeReplyPopup(); return; }
+  const anchorNode = sel.anchorNode;
+  const bubble = anchorNode && (anchorNode.nodeType === 1 ? anchorNode : anchorNode.parentElement)?.closest('.bubble');
+  if (!bubble) { closeReplyPopup(); return; }
+
+  closeReplyPopup();
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  replyPopup = document.createElement('div');
+  replyPopup.className = 'reply-popup';
+  replyPopup.innerHTML = '<button type="button">↩ Reply</button>';
+  document.body.appendChild(replyPopup);
+  replyPopup.style.top = Math.max(8, rect.top - 42) + 'px';
+  replyPopup.style.left = Math.min(rect.left, window.innerWidth - replyPopup.offsetWidth - 8) + 'px';
+  replyPopup.querySelector('button').addEventListener('click', () => {
+    quotedSlot.innerHTML =
+      '<div class="quoted-reply"><div class="text"></div><button type="button" title="Remove quote">✕</button></div>';
+    quotedSlot.querySelector('.text').textContent = text;
+    quotedSlot.querySelector('button').addEventListener('click', () => { quotedSlot.innerHTML = ''; });
+    inputEl.focus();
+    closeReplyPopup();
+    sel.removeAllRanges();
+  });
+});
+document.addEventListener('mousedown', (e) => {
+  const targetEl = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement;
+  if (replyPopup && !(targetEl && targetEl.closest('.reply-popup'))) closeReplyPopup();
+});
+
+/* Rehydrate completed action cards + any pending approval from the server-rendered transcript. */
+document.querySelectorAll('.action-card').forEach((el, i) => {
+  const data = TRANSCRIPT_ACTIONS[i];
+  if (!data) return;
+  const built = buildActionCard(data.name, data.args, data.result);
+  el.replaceWith(built);
+});
+if (INITIAL_PENDING) {
+  currentPendingCard = buildPendingCard(INITIAL_PENDING);
+  composerOuter.insertBefore(currentPendingCard, composerOuter.firstChild);
+}
+
+/* Apply the same manual theme override chat mode uses, if set. */
+const savedTheme = localStorage.getItem('txlclaude-theme');
+if (savedTheme === 'light' || savedTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
+wrapEl.querySelectorAll('.msg.assistant').forEach(enhanceCodeBlocks);
+scrollToBottom();
+</script>
+</body>
+</html>

@@ -5,7 +5,23 @@
       "name": "research-agent-web",
       "runtimeExecutable": "python",
       "runtimeArgs": ["app.py"],
-      "port": 5000
+      "port": 5000,
+      "autoPort": true
+    },
+    {
+      "name": "txl-claude-chat",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["chat_app.py"],
+      "port": 5001,
+      "autoPort": true
+    },
+    {
+      "name": "txl-claude-chat-local",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["chat_app.py"],
+      "env": { "CHAT_BACKEND": "ollama" },
+      "port": 5002,
+      "autoPort": true
     }
   ]
 }
