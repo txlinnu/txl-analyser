@@ -3,19 +3,23 @@ YouTube Video Summarizer - Free / Cloud Edition
 -------------------------------------------------
 $0 cost: uses Groq's free API (fast hosted inference, generous free tier,
 no credit card) instead of a local model, so it doesn't touch your PC's
-CPU/RAM.
+CPU/RAM - and free DuckDuckGo search + image search instead of a paid tool.
 
 Give it a YouTube URL. It:
   1. Fetches the video's title/channel (via YouTube's public oEmbed
      endpoint - no API key needed).
   2. Fetches the video's transcript/captions (via youtube-transcript-api -
-     no API key, no download of the actual video).
-  3. Uses Groq to write a short "About this video" blurb plus a detailed,
-     topic-by-topic explanation of what's actually covered (not just a
-     list of topic names).
+     no API key, no download of the actual video) - or uses a pasted
+     transcript if one is provided.
+  3. Condenses the transcript into notes and identifies the main topics.
+  4. For EVERY topic, deterministically runs a real DuckDuckGo search and
+     fetches the top result's page content, plus one relevant image - the
+     same grounding approach used for PDFs, so a video summary isn't just
+     restating the transcript, it's enriched with real current context.
+  5. Writes a short, sourced, illustrated summary of every topic.
 
-Long transcripts are summarized in chunks and then combined (map-reduce),
-so this works on long videos too, not just short ones.
+Long transcripts are condensed in chunks first (map-reduce), so this
+works on long videos too, not just short ones.
 
 Note: unlike a fully-local setup, the transcript text is sent to Groq's
 servers to be processed (not 100% private) - that's the trade-off for not
@@ -29,13 +33,13 @@ import argparse
 import os
 import re
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
-from groq import Groq, RateLimitError
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig
+
+from pdf_research_agent_local import ask, fetch_page, image_search, web_search
 
 try:
     from dotenv import load_dotenv
@@ -45,18 +49,22 @@ except ImportError:
 
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 CHUNK_CHARS = 4_000  # transcript chars per map-reduce chunk (kept small - free tier has a low tokens/minute cap)
-COMBINED_NOTES_CHARS = 6_000  # cap on notes fed into the final synthesis pass
-CHUNK_WORKERS = 2  # transcript chunks summarized in parallel
-MAX_RETRIES = 5
+COMBINED_NOTES_CHARS = 6_000  # cap on condensed notes used for topic research
+CHUNK_WORKERS = 2  # transcript chunks condensed in parallel
+MAX_TOPICS = 6
+SEARCH_RESULTS_PER_TOPIC = 4
+PAGES_TO_FETCH_PER_TOPIC = 1
+TOPIC_RESEARCH_WORKERS = 2  # topics researched in parallel (kept low - free tier has a low tokens/minute cap)
+CONTEXT_CHARS = 3500  # notes / search results chars per prompt (keeps calls under the free-tier TPM limit)
 
-TRANSCRIPT_ERROR_NOTE = """This transcript may contain speech-recognition \
-(ASR) errors - especially garbled technical terms, product/brand names, or \
-jargon that got mistranscribed into a similar-sounding but wrong word (e.g. \
-"Jobex" instead of "Zabbix", a monitoring tool). When a word clearly doesn't \
-fit the context but a real, well-known term that sounds similar does, treat \
-it as the corrected term in your notes instead of repeating the garbled \
-version. Only do this when you're confident - don't guess at unclear \
-non-technical speech."""
+TRANSCRIPT_ERROR_NOTE = """This video's transcript is auto-generated and \
+may contain speech-recognition (ASR) errors - especially garbled technical \
+terms, product/brand names, or jargon mistranscribed into a similar- \
+sounding but wrong word (e.g. "Jobex" instead of "Zabbix", a monitoring \
+tool). When a word clearly doesn't fit the context but a real, well-known \
+term that sounds similar does, treat it as the corrected term instead of \
+repeating the garbled version. Only do this when you're confident - don't \
+guess at unclear non-technical speech."""
 
 CHUNK_SUMMARY_PROMPT = """This is one part of a video transcript (there may \
 be other parts before/after this one). Write detailed notes on what is \
@@ -72,109 +80,89 @@ content, write "No substantive content in this part."
 {chunk}
 """
 
-FINAL_SUMMARY_PROMPT = """You are writing a summary of a YouTube video \
-titled "{title}" by {author}.
+TOPIC_EXTRACTION_PROMPT = """You will be given notes on a YouTube video's \
+content. List the main topics/subjects it covers, from most to least \
+important - at most {max_topics}, but FEWER if the video doesn't support \
+that many distinct topics. Do not pad the list or split one idea into \
+multiple near-duplicate topics just to reach {max_topics}: a short or \
+narrow video might genuinely only have 1-3 real topics, and that's fine. \
+Each topic must be clearly distinct from the others.
 
-Below are detailed notes extracted from the full transcript, in order. \
-Using ONLY the information in these notes, write:
-
-**About this video:** 1-2 sentences on what the video is / who it's for.
-
-Then identify the 4-8 main topics discussed, in the order they come up, \
-and for EACH one write a section in this exact format:
-
-### <short topic name>
-<2-4 sentences explaining what was actually said about this topic - the \
-specific steps, settings, examples, comparisons, or reasoning from the \
-notes. Do not just restate the topic name - explain the actual content.>
-
-Rules:
-- Use ONLY information that appears in the notes below. Do not add outside \
-knowledge, do not guess, do not embellish.
-- If the notes don't have enough detail to explain a topic properly, say \
-"the video mentions this briefly but doesn't go into detail" instead of \
-making something up.
-
-Output only the "About this video" line followed by the topic sections - \
-nothing else, no closing remarks.
-
---- NOTES FROM TRANSCRIPT ---
-{notes}
+Output ONLY a numbered list, one short topic name per line (3-6 words \
+each), nothing else - no preamble, no explanation.
 """
 
-SHORT_SUMMARY_PROMPT = """You are writing a summary of a YouTube video \
-titled "{title}" by {author}. Below is its full transcript.
+OVERVIEW_PROMPT = """Write a single short sentence or two (plain language, \
+no jargon) summarizing what this video is about overall and who it's for, \
+based on the notes below. Output only that, nothing else."""
 
-Using ONLY what's actually said in the transcript, write:
+TOPIC_WRITE_PROMPT = """You are writing one section of a video summary \
+about the topic: "{topic}"
 
-**About this video:** 1-2 sentences on what the video is / who it's for.
+Below is (1) notes on what the video says related to this topic, and (2) \
+real, current web search results about this topic gathered just now.
 
-Then identify the main topics discussed (as many as the video actually \
-covers - could be just one for a short video), and for EACH one write a \
-section in this exact format:
+Write a short section in this exact format:
 
-### <short topic name>
-<2-4 sentences explaining what was actually said about this topic - \
-specific details, not just the topic name.>
+### {topic}
 
-Do not add information that isn't in the transcript. Do not guess or \
-embellish. Output only the "About this video" line followed by the topic \
-sections - nothing else.
+<2-5 sentences in plain, jargon-free language that combines what the video \
+actually said with useful context the web search adds. If the web results \
+add nothing new, just summarize what the video said. If they conflict, \
+briefly say so.>
+
+**Sources:**
+<a markdown bullet list of the URLs you actually used from the search \
+results below - copy them exactly. If nothing from the web was useful, \
+write "Video only".>
+
+Do not invent URLs. Only cite URLs that appear in the search results below.
 
 """ + TRANSCRIPT_ERROR_NOTE + """
 
---- TRANSCRIPT ---
-{transcript}
+--- VIDEO NOTES ---
+{notes}
+
+--- WEB SEARCH RESULTS ---
+{search_results}
 """
 
-VERIFY_PROMPT = """You are a fact-checker. Below is a written video \
-summary and the exact source material (transcript notes) it's supposed to \
-be based on. The source is an auto-generated transcript that may itself \
-contain speech-recognition errors in technical terms or brand names (e.g. \
-"Jobex" instead of "Zabbix") - if the summary uses a corrected, real term \
-where the source has an obviously garbled one, that's fine, leave it as-is.
+VERIFY_PROMPT = """You are a fact-checker. Below is a written section and \
+the exact source material it's supposed to be based on. The video notes \
+come from an auto-generated transcript that may itself contain \
+speech-recognition errors in technical terms or brand names (e.g. "Jobex" \
+instead of "Zabbix") - if the section uses a corrected, real term where the \
+notes have an obviously garbled one, that's fine, leave it as-is.
 
-Check EVERY factual claim in the summary against the source material. For \
+Check EVERY factual claim in the section against the source material. For \
 each claim:
-- If it's directly supported by the source material (including the case \
-above, where a garbled term was reasonably corrected), keep it as-is.
-- If it is NOT supported (invented, exaggerated, or from outside \
-knowledge about the topic rather than what this specific video actually \
-said), remove that specific claim or reword the sentence to only state \
-what the source material actually says. Do not add any new information.
+- If it's directly supported by the video notes or the web search results \
+(including a reasonable ASR correction), keep it as-is.
+- If it is NOT supported by either source (invented, exaggerated, or from \
+outside knowledge), remove that specific claim or reword the sentence to \
+only state what the sources actually say. Do not add any new information \
+that isn't in the sources.
+- Only keep a source URL in the "Sources:" list if it appears in the web \
+search results below.
 
-Output ONLY the corrected summary in the exact same format ("About this \
-video:" line followed by ### topic sections) - no commentary about what \
-you changed, no preamble.
+Output ONLY the corrected section in the exact same format (### heading, \
+explanation, **Sources:** list) - no commentary about what you changed, no \
+preamble.
 
---- SUMMARY TO CHECK ---
-{summary}
+--- SECTION TO CHECK ---
+{section}
 
---- SOURCE MATERIAL ---
-{source}
+--- SOURCE: VIDEO NOTES ---
+{notes}
+
+--- SOURCE: WEB SEARCH RESULTS ---
+{search_results}
 """
 
 VIDEO_ID_PATTERNS = [
     r"(?:v=|/)([0-9A-Za-z_-]{11})(?:[&?/]|$)",
     r"youtu\.be/([0-9A-Za-z_-]{11})",
 ]
-
-_client = None
-
-
-def _get_client() -> Groq:
-    global _client
-    if _client is None:
-        api_key = os.environ.get("GROQ_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "GROQ_API_KEY is not set. Get a free key (no credit card) at "
-                "https://console.groq.com/keys, then either set it as an "
-                "environment variable or put GROQ_API_KEY=gsk_... in a .env "
-                "file next to this script."
-            )
-        _client = Groq(api_key=api_key)
-    return _client
 
 
 def extract_video_id(url: str) -> str:
@@ -217,50 +205,90 @@ def get_transcript(video_id: str) -> str:
     return " ".join(snippet.text for snippet in fetched)
 
 
-def summarize(transcript: str, title: str, author: str, model: str) -> str:
+def build_notes(transcript: str, model: str) -> str:
+    """Condense a transcript into notes usable for topic research. Chunks long transcripts (map-reduce)."""
     if len(transcript) <= CHUNK_CHARS:
-        prompt = SHORT_SUMMARY_PROMPT.format(title=title, author=author, transcript=transcript)
-        summary = _ask(model, prompt)
-        source = transcript
-    else:
-        chunks = [transcript[i:i + CHUNK_CHARS] for i in range(0, len(transcript), CHUNK_CHARS)]
-        print(f"  [summarizing {len(chunks)} parts in parallel]", file=sys.stderr)
-        with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as pool:
-            notes = list(pool.map(
-                lambda c: _ask(model, CHUNK_SUMMARY_PROMPT.format(chunk=c)), chunks
-            ))
-
-        combined_notes = "\n\n".join(notes)[:COMBINED_NOTES_CHARS]
-        print("  [writing final summary]", file=sys.stderr)
-        prompt = FINAL_SUMMARY_PROMPT.format(title=title, author=author, notes=combined_notes)
-        summary = _ask(model, prompt)
-        source = combined_notes
-
-    print("  [verifying accuracy]", file=sys.stderr)
-    verify_prompt = VERIFY_PROMPT.format(summary=summary, source=source)
-    return _ask(model, verify_prompt)
+        return transcript
+    chunks = [transcript[i:i + CHUNK_CHARS] for i in range(0, len(transcript), CHUNK_CHARS)]
+    print(f"  [condensing {len(chunks)} parts in parallel]", file=sys.stderr)
+    with ThreadPoolExecutor(max_workers=CHUNK_WORKERS) as pool:
+        parts = list(pool.map(lambda c: ask(model, CHUNK_SUMMARY_PROMPT.format(chunk=c)), chunks))
+    return "\n\n".join(parts)[:COMBINED_NOTES_CHARS]
 
 
-def _wait_seconds_from_error(e: Exception) -> float:
-    m = re.search(r"try again in ([\d.]+)s", str(e))
-    return float(m.group(1)) + 0.5 if m else 3.0
+def extract_topics(notes: str, model: str) -> list:
+    raw = ask(
+        model,
+        TOPIC_EXTRACTION_PROMPT.format(max_topics=MAX_TOPICS),
+        context="VIDEO NOTES:\n\n" + notes[:CONTEXT_CHARS],
+    )
+    topics = []
+    for line in raw.splitlines():
+        line = line.strip().lstrip("-*").strip()
+        line = line.lstrip("0123456789.)").strip()
+        if line:
+            topics.append(line)
+    if not topics:
+        topics = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    return topics[:MAX_TOPICS]
 
 
-def _ask(model: str, prompt: str) -> str:
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = _get_client().chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            return (response.choices[0].message.content or "").strip()
-        except RateLimitError as e:
-            if attempt == MAX_RETRIES - 1:
-                raise
-            wait = _wait_seconds_from_error(e)
-            print(f"    [rate limited, waiting {wait:.1f}s]", file=sys.stderr)
-            time.sleep(wait)
+def research_topic(topic: str, notes: str, model: str) -> str:
+    print(f"  [researching] {topic}", file=sys.stderr)
+    image_pool = ThreadPoolExecutor(max_workers=1)
+    image_future = image_pool.submit(image_search, topic)
+
+    search_raw = web_search(topic, max_results=SEARCH_RESULTS_PER_TOPIC)
+    print(f"    web_search -> {len(search_raw)} chars of results", file=sys.stderr)
+
+    fetched_chunks = []
+    urls_seen = 0
+    for line in search_raw.splitlines():
+        line = line.strip()
+        if line.startswith("URL:") and urls_seen < PAGES_TO_FETCH_PER_TOPIC:
+            url = line.split("URL:", 1)[1].strip()
+            print(f"    fetch_page -> {url}", file=sys.stderr)
+            page_text = fetch_page(url)
+            fetched_chunks.append(f"[Fetched from {url}]\n{page_text}")
+            urls_seen += 1
+
+    search_results = search_raw
+    if fetched_chunks:
+        search_results += "\n\n--- FULL PAGE EXCERPTS ---\n\n" + "\n\n".join(fetched_chunks)
+
+    notes_excerpt = notes[:CONTEXT_CHARS]
+    search_excerpt = search_results[:CONTEXT_CHARS]
+
+    prompt = TOPIC_WRITE_PROMPT.format(topic=topic, notes=notes_excerpt, search_results=search_excerpt)
+    section = ask(model, prompt)
+
+    print(f"    [verifying] {topic}", file=sys.stderr)
+    verify_prompt = VERIFY_PROMPT.format(section=section, notes=notes_excerpt, search_results=search_excerpt)
+    verified = ask(model, verify_prompt)
+
+    image_url = image_future.result()
+    image_pool.shutdown()
+    if image_url:
+        heading = f"### {topic}"
+        verified = verified.replace(heading, f"{heading}\n\n![{topic}]({image_url})", 1)
+    return verified
+
+
+def summarize(transcript: str, model: str) -> str:
+    notes = build_notes(transcript, model)
+
+    print("  [identifying topics]", file=sys.stderr)
+    topics = extract_topics(notes, model)
+    if not topics:
+        raise RuntimeError("Model didn't return any topics - try a different --model.")
+    print(f"  Topics: {', '.join(topics)}", file=sys.stderr)
+
+    with ThreadPoolExecutor(max_workers=TOPIC_RESEARCH_WORKERS) as pool:
+        overview_future = pool.submit(ask, model, OVERVIEW_PROMPT, "VIDEO NOTES:\n\n" + notes[:CONTEXT_CHARS])
+        sections = list(pool.map(lambda t: research_topic(t, notes, model), topics))
+        overview = overview_future.result()
+
+    return f"**About this video:** {overview}\n\n" + "\n\n".join(sections) + "\n"
 
 
 def run(url: str, model: str = DEFAULT_MODEL, transcript_text: str = None) -> str:
@@ -286,8 +314,8 @@ def run(url: str, model: str = DEFAULT_MODEL, transcript_text: str = None) -> st
     if not transcript.strip():
         raise RuntimeError("Transcript came back empty - this video may have no captions.")
 
-    print(f"Summarizing ({len(transcript):,} characters of transcript) ...", file=sys.stderr)
-    summary = summarize(transcript, meta["title"], meta["author"], model)
+    print(f"Summarizing + researching ({len(transcript):,} characters of transcript) ...", file=sys.stderr)
+    summary = summarize(transcript, model)
 
     thumbnail_md = f"![{meta['title']}]({meta['thumbnail']})\n\n" if meta.get("thumbnail") else ""
 
@@ -301,7 +329,7 @@ def run(url: str, model: str = DEFAULT_MODEL, transcript_text: str = None) -> st
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Summarize a YouTube video using Groq's free API + its transcript.")
+    parser = argparse.ArgumentParser(description="Summarize a YouTube video using Groq's free API + its transcript + free web research.")
     parser.add_argument("url", help="YouTube video URL")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Groq model to use (default: {DEFAULT_MODEL})")
     parser.add_argument(
