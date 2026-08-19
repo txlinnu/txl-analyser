@@ -143,6 +143,35 @@
     margin-bottom: 14px;
   }
   input[type="url"]:focus, select.model-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea {
+    width: 100%;
+    padding: 10px 11px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--code-bg);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+    margin-top: 8px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  details.transcript-paste {
+    margin-bottom: 14px;
+    font-size: 0.82rem;
+  }
+  details.transcript-paste summary {
+    cursor: pointer;
+    color: var(--yt);
+    font-weight: 600;
+  }
+  details.transcript-paste summary:hover { opacity: 0.85; }
+  .paste-help {
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    margin: 8px 0 0;
+  }
   .field-label {
     display: block;
     font-size: 0.76rem;
@@ -314,6 +343,15 @@
       <p class="desc">Paste a link — get a brief of what the video covers, straight from its captions.</p>
       <form action="/youtube" method="post" onsubmit="showLoading('Fetching transcript, writing the summary... this can take a few minutes.')">
         <input type="url" name="youtube_url" placeholder="https://www.youtube.com/watch?v=..." required>
+        <details class="transcript-paste">
+          <summary>Auto-fetch not working? Paste the transcript instead</summary>
+          <p class="paste-help">
+            On YouTube: open the video → click <strong>"···" (more)</strong> below it →
+            <strong>Show transcript</strong> → select all the text and copy it → paste below.
+            Same data, same output quality as auto-fetch — just always works.
+          </p>
+          <textarea name="transcript_text" placeholder="Paste the transcript text here (optional)" rows="4"></textarea>
+        </details>
         <label class="field-label" for="yt-model">Speed / accuracy</label>
         <select class="model-select" id="yt-model" name="model">
           {% for value, label in model_choices %}

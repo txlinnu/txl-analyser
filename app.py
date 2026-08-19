@@ -112,9 +112,10 @@ def process_youtube():
     if not url:
         return render_error("Please paste a YouTube URL.")
 
+    transcript_text = (request.form.get("transcript_text") or "").strip() or None
     model = pick_model(request.form)
     try:
-        report = youtube_agent.run(url, model)
+        report = youtube_agent.run(url, model, transcript_text=transcript_text)
         return render_report("youtube", url, report)
     except Exception as e:
         traceback.print_exc(file=sys.stderr)

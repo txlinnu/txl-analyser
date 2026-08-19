@@ -46,27 +46,38 @@ Then, from `D:\AI Agents`:
 Render will build and deploy — takes a few minutes the first time.
 You'll get a free URL like `https://txl-analyser.onrender.com`.
 
-## 3. YouTube summaries on the live site: a known, unavoidable limit
+## 3. YouTube summaries on the live site: a known, unavoidable limit — and the free workaround
 
-**Tested and confirmed**: YouTube blocks transcript requests from
-datacenter IPs as a whole class - this affects Render, and it affects
-free proxies too. We tried routing through two different Webshare free
-proxy IPs and both were blocked with the same error. YouTube's own
-guidance (surfaced via the `youtube-transcript-api` library) is that only
-a **paid, rotating residential proxy** reliably works around this - there
-is no free way to fix it.
+**Tested extensively**: YouTube blocks automated transcript fetching from
+any cloud server as a matter of policy (their 2026 anti-bot system) - not
+specific to Render. We confirmed this with: Render directly, two
+different Webshare free proxy IPs, and even Netlify's edge network (a
+completely different, non-datacenter-blocklisted network) using a
+purpose-built library that tried three separate fallback strategies -
+all blocked with "Sign in to confirm you're not a bot." This isn't
+fixable by switching hosts or using free proxies; only a paid rotating
+residential proxy reliably gets around it.
+
+**The free fix - manual transcript paste:** the YouTube form on the live
+site has a collapsible **"Auto-fetch not working? Paste the transcript
+instead"** option. Copy the transcript from YouTube's own "Show
+transcript" button (under "···" below the video) and paste it in - same
+data YouTube would have given an automated fetch anyway, same output
+quality, and it always works since nothing is being fetched from YouTube
+at all.
 
 **Practical result:**
-- ✅ PDF summarization works fine on the free public deployment
-- ❌ YouTube summarization only works from a normal home/residential IP
-  - locally (`python app.py` on your PC) — works
-  - from the public Render URL — blocked by YouTube, not fixable for free
+- ✅ PDF summarization — works fine on the free public deployment
+- ✅ YouTube summarization — works via auto-fetch locally, or via paste
+  on the live site
+- ❌ YouTube auto-fetch specifically on the live site — blocked by
+  YouTube, not fixable for free (use paste instead)
 
-If you ever want YouTube summaries working on the public site anyway, the
-code already supports it — set a `PROXY_URL` environment variable in
-Render (format `http://user:pass@host:port`) pointing at a **paid
-residential** proxy service, and it'll be used automatically. Nothing to
-change in the code.
+If you ever want auto-fetch working on the public site anyway, the code
+already supports it — set a `PROXY_URL` environment variable in Render
+(format `http://user:pass@host:port`) pointing at a **paid residential**
+proxy service, and it'll be used automatically. Nothing to change in the
+code.
 
 ## What to expect
 

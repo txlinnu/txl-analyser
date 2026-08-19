@@ -56,11 +56,19 @@ Want this reachable from anywhere, not just your PC? See
 **[DEPLOY.md](DEPLOY.md)** — deploys to Render's free tier, no credit
 card, no domain purchase. `render.yaml` is already set up for it.
 
-One known limitation on the public deployment: YouTube blocks transcript
-requests from cloud/datacenter IPs (tested - free proxies don't get
-around this, it needs a paid residential proxy). **PDF summaries work
-fine on the live site either way**; YouTube summaries currently only
-work when running locally. Details in DEPLOY.md.
+One known limitation on the public deployment: YouTube blocks automated
+transcript fetching from any cloud server (tested extensively - this is
+YouTube's own 2026 anti-bot system, not fixable by switching hosts or
+using free proxies). **PDF summaries work fine on the live site either
+way.** For YouTube, you have two free options:
+1. Run it locally instead (`python app.py` on your PC) - auto-fetch
+   works fine there.
+2. On the live site, use the **"paste the transcript instead"** option
+   in the YouTube form - copy the transcript from YouTube's own "Show
+   transcript" button and paste it in. Same data, same output quality,
+   works every time, no fetching involved.
+
+Details in DEPLOY.md.
 
 ## Command line
 

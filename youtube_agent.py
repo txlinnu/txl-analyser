@@ -246,19 +246,25 @@ def _ask(model: str, prompt: str) -> str:
             time.sleep(wait)
 
 
-def run(url: str, model: str = DEFAULT_MODEL) -> str:
+def run(url: str, model: str = DEFAULT_MODEL, transcript_text: str = None) -> str:
     video_id = extract_video_id(url)
     print(f"Fetching video info for {video_id} ...", file=sys.stderr)
     meta = get_metadata(url)
 
-    print("Fetching transcript ...", file=sys.stderr)
-    try:
-        transcript = get_transcript(video_id)
-    except Exception as e:
-        raise RuntimeError(
-            f"Couldn't get a transcript for this video ({e}). "
-            "It may have captions disabled."
-        )
+    if transcript_text and transcript_text.strip():
+        print("Using pasted transcript ...", file=sys.stderr)
+        transcript = transcript_text.strip()
+    else:
+        print("Fetching transcript ...", file=sys.stderr)
+        try:
+            transcript = get_transcript(video_id)
+        except Exception as e:
+            raise RuntimeError(
+                f"Couldn't get a transcript for this video ({e}). "
+                "It may have captions disabled, or automatic fetching may be "
+                "blocked here - try pasting the transcript text instead "
+                "(copy it from YouTube's own \"Show transcript\" button)."
+            )
 
     if not transcript.strip():
         raise RuntimeError("Transcript came back empty - this video may have no captions.")
@@ -281,10 +287,19 @@ def main():
     parser = argparse.ArgumentParser(description="Summarize a YouTube video using Groq's free API + its transcript.")
     parser.add_argument("url", help="YouTube video URL")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Groq model to use (default: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--transcript-file", type=str, default=None,
+        help="Path to a text file with a manually-pasted transcript (skips auto-fetching)",
+    )
     args = parser.parse_args()
 
+    transcript_text = None
+    if args.transcript_file:
+        with open(args.transcript_file, encoding="utf-8") as f:
+            transcript_text = f.read()
+
     try:
-        report = run(args.url, args.model)
+        report = run(args.url, args.model, transcript_text=transcript_text)
     except Exception as e:
         sys.exit(str(e))
 
