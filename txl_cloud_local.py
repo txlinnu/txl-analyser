@@ -12,6 +12,7 @@ Setup (one-time), on the machine that will run this:
     2. Pull the models this app expects:
          ollama pull qwen2.5:14b     (Accurate - bigger, slower - needs ~9 GB free)
          ollama pull qwen2.5:7b      (Balanced - default - ~4.7 GB)
+         ollama pull qwen2.5vl:7b    (optional - needed to understand pasted images, ~6 GB)
     3. pip install ollama
 
 Then run chat_app.py with CHAT_BACKEND=ollama set (see README.md).
@@ -33,6 +34,10 @@ import ollama
 
 DEFAULT_MODEL = "qwen2.5:7b"
 MAX_HISTORY_MESSAGES = 24  # ~12 user/assistant turns kept; oldest trimmed first
+
+# qwen2.5:7b/14b are text-only - a pasted image needs a vision-capable
+# model instead. Pull it separately: ollama pull qwen2.5vl:7b (~6 GB)
+VISION_MODEL = "qwen2.5vl:7b"
 
 SYSTEM_PROMPT = """You are TXL Cloud, a free, private, helpful AI chat \
 assistant. You're inspired by Claude's helpful/honest/concise style, but \
@@ -65,13 +70,24 @@ def trim_history(history: List[dict]) -> List[dict]:
     return history
 
 
-def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instructions: str = None) -> Iterator[str]:
+def _data_url_to_b64(data_url: str) -> str:
+    return data_url.split(",", 1)[1] if "," in data_url else data_url
+
+
+def stream_reply(
+    history: List[dict],
+    model: str = DEFAULT_MODEL,
+    custom_instructions: str = None,
+    image_data_url: str = None,
+) -> Iterator[str]:
     """
     Given a conversation history (list of {"role", "content"} dicts, no
     system message - just user/assistant turns), stream the assistant's
     reply back as text chunks. Talks to a local Ollama server
     (http://127.0.0.1:11434 by default). `custom_instructions`, if set, is
     the user's own "Customize" preferences, appended to the system prompt.
+    If image_data_url is set, the request is routed to VISION_MODEL
+    instead - qwen2.5:7b/14b can't see images, only qwen2.5vl can.
     """
     system_prompt = SYSTEM_PROMPT
     if custom_instructions:
@@ -81,6 +97,11 @@ def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instruc
             f"being safe or honest:\n{custom_instructions}"
         )
     messages = [{"role": "system", "content": system_prompt}] + trim_history(history)
+
+    if image_data_url:
+        model = VISION_MODEL
+        if messages and messages[-1]["role"] == "user":
+            messages[-1] = {**messages[-1], "images": [_data_url_to_b64(image_data_url)]}
 
     try:
         stream = ollama.chat(model=model, messages=messages, stream=True)

@@ -310,6 +310,28 @@ def pick_model(data) -> str:
     return model if model in VALID_MODELS else agent.DEFAULT_MODEL
 
 
+_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/]+=*$")
+MAX_IMAGE_B64_CHARS = 8_000_000  # ~6 MB raw image, base64-inflated
+
+
+class InvalidImage(ValueError):
+    pass
+
+
+def _validate_image(image_data_url):
+    """Returns the data URL unchanged if it's a well-formed, reasonably-sized
+    pasted image - None if nothing was sent. Raises InvalidImage otherwise,
+    so the route can fail fast with a 400 instead of forwarding junk to a
+    model API."""
+    if not image_data_url:
+        return None
+    if len(image_data_url) > MAX_IMAGE_B64_CHARS:
+        raise InvalidImage("That image is too large (max ~6 MB).")
+    if not _IMAGE_DATA_URL_RE.match(image_data_url):
+        raise InvalidImage("Unsupported image data.")
+    return image_data_url
+
+
 def _make_title(message: str) -> str:
     title = " ".join(message.split())  # collapse whitespace/newlines
     return title if len(title) <= 48 else title[:47].rstrip() + "…"
@@ -492,6 +514,7 @@ def chat_home():
                 "role": m.role,
                 "html": render_message(m.content) if m.role == "assistant" else None,
                 "text": m.content,
+                "image_data": m.image_data,
                 "is_last": i == len(msgs) - 1,
             }
             for i, m in enumerate(msgs)
@@ -528,6 +551,10 @@ def chat_send():
         return jsonify({"error": "Please type a message."}), 400
     if len(message) > 8000:
         return jsonify({"error": "That message is too long (max 8000 characters)."}), 400
+    try:
+        image_data_url = _validate_image(data.get("image"))
+    except InvalidImage as e:
+        return jsonify({"error": str(e)}), 400
 
     model = pick_model(data)
     custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
@@ -540,7 +567,7 @@ def chat_send():
         models.db.session.add(conv)
         models.db.session.commit()
 
-    user_msg = models.Message(conversation_id=conv.id, role="user", content=message)
+    user_msg = models.Message(conversation_id=conv.id, role="user", content=message, image_data=image_data_url)
     models.db.session.add(user_msg)
     models.db.session.commit()
     user_message_id = user_msg.id
@@ -584,7 +611,7 @@ def chat_send():
         yield f"data: {json.dumps({'user_message_id': user_message_id})}\n\n"
         chunks = []
         try:
-            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
+            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
                 chunks.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
         except Exception as e:
@@ -624,11 +651,12 @@ def chat_regenerate(conv_id):
     custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
     old_assistant_id = msgs[-1].id
     history = [{"role": m.role, "content": m.content} for m in msgs[:-1]]
+    image_data_url = msgs[-2].image_data if len(msgs) >= 2 and msgs[-2].role == "user" else None
 
     def generate():
         chunks = []
         try:
-            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
+            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
                 chunks.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
         except Exception as e:

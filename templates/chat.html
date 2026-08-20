@@ -591,6 +591,19 @@
   .quoted-reply button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; flex-shrink: 0; }
   .quoted-reply button:hover { color: var(--danger-text); }
 
+  .image-attachment {
+    max-width: 760px; margin: 0 auto 8px; display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  .image-attachment img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+  .image-attachment .text { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--muted); }
+  .image-attachment button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; flex-shrink: 0; }
+  .image-attachment button:hover { color: var(--danger-text); }
+  .msg-image {
+    display: block; max-width: 320px; max-height: 320px; border-radius: 12px;
+    margin-bottom: 6px; border: 1px solid var(--border); object-fit: contain;
+  }
+
   .tool-btn {
     flex-shrink: 0; width: 34px; height: 34px; border: none; border-radius: 9px;
     background: transparent; color: var(--muted); font-size: 1rem; cursor: pointer;
@@ -866,6 +879,7 @@
           {% if m.role == 'user' %}
             <div class="msg user" data-msg-id="{{ m.id }}">
               <div class="msg-col">
+                {% if m.image_data %}<img class="msg-image" src="{{ m.image_data }}" alt="Attached image">{% endif %}
                 <div class="bubble">{{ m.text }}</div>
                 <div class="msg-actions">
                   <button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button>
@@ -1046,15 +1060,17 @@ function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function addUserMessage(text) {
+function addUserMessage(text, imageDataUrl) {
   chatMain.classList.remove('landing');
   const div = document.createElement('div');
   div.className = 'msg user';
   div.innerHTML =
     '<div class="msg-col">' +
+      (imageDataUrl ? '<img class="msg-image" alt="Attached image">' : '') +
       '<div class="bubble"></div>' +
       '<div class="msg-actions"><button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button></div>' +
     '</div>';
+  if (imageDataUrl) div.querySelector('.msg-image').src = imageDataUrl;
   div.querySelector('.bubble').textContent = text;
   wrapEl.appendChild(div);
   scrollToBottom();
@@ -1175,12 +1191,15 @@ async function sendMessage(text) {
     pendingAttachment = null;
     attachmentSlot.innerHTML = '';
   }
+  const imageToSend = pendingImage;
+  pendingImage = null;
+  attachmentSlot.innerHTML = '';
 
   busy = true;
   sendBtn.disabled = true;
   inputEl.value = '';
   autosize();
-  const userDiv = addUserMessage(text);
+  const userDiv = addUserMessage(text, imageToSend);
   const bubble = addAssistantPlaceholder();
 
   let raw = '';
@@ -1192,6 +1211,7 @@ async function sendMessage(text) {
         message: text, model: modelSelect.value, conv_id: currentConvId,
         custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
         web_search: websearchToggle.classList.contains('active'),
+        image: imageToSend || undefined,
       }),
     });
     await consumeSSE(resp, (payload) => {
@@ -1868,6 +1888,38 @@ fileInput.addEventListener('change', async () => {
     attachmentSlot.innerHTML = '';
   });
   inputEl.focus();
+});
+
+/* ---------- Paste an image ---------- */
+let pendingImage = null;
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+function setPendingImage(dataUrl) {
+  pendingImage = dataUrl;
+  pendingAttachment = null; // an image and a text-file attachment aren't combined
+  attachmentSlot.innerHTML =
+    '<div class="image-attachment"><img src="' + dataUrl + '" alt=""><div class="text">Image attached</div>' +
+    '<button type="button" title="Remove image">✕</button></div>';
+  attachmentSlot.querySelector('button').addEventListener('click', () => {
+    pendingImage = null;
+    attachmentSlot.innerHTML = '';
+  });
+}
+
+inputEl.addEventListener('paste', (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (!item.type || !item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (!file) continue;
+    if (file.size > MAX_IMAGE_BYTES) { addErrorNote('That image is too large (max 6 MB).'); return; }
+    e.preventDefault();
+    const reader = new FileReader();
+    reader.onload = () => setPendingImage(reader.result);
+    reader.readAsDataURL(file);
+    return;
+  }
 });
 
 /* ---------- Voice input (mic) ---------- */

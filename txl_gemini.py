@@ -14,11 +14,15 @@ card), set GEMINI_API_KEY in the environment (.env locally, or your
 host's env vars).
 """
 
+import base64
 import os
-from typing import Iterator, List
+import re
+from typing import Iterator, List, Optional
 
 from google import genai
 from google.genai import types
+
+_DATA_URL_RE = re.compile(r"^data:(image/[\w.+-]+);base64,(.+)$", re.DOTALL)
 
 try:
     from dotenv import load_dotenv
@@ -45,11 +49,26 @@ def _get_client() -> genai.Client:
     return _client
 
 
-def stream_reply(history: List[dict], system_prompt: str, model: str = DEFAULT_MODEL) -> Iterator[str]:
+def _decode_data_url(data_url: str):
+    m = _DATA_URL_RE.match(data_url or "")
+    if not m:
+        raise ValueError("Invalid image data.")
+    mime_type, b64 = m.group(1), m.group(2)
+    return mime_type, base64.b64decode(b64)
+
+
+def stream_reply(
+    history: List[dict],
+    system_prompt: str,
+    model: str = DEFAULT_MODEL,
+    image_data_url: Optional[str] = None,
+) -> Iterator[str]:
     """
     Same output shape as txl_cloud.stream_reply (yields text chunks), but
     takes an already-assembled system_prompt string directly - the caller
-    has already merged in custom_instructions etc.
+    has already merged in custom_instructions etc. If image_data_url is
+    set (a "data:image/...;base64,..." string), it's attached to the most
+    recent user turn - Gemini is multimodal, unlike the Groq/Ollama models.
     """
     contents = []
     for m in history:
@@ -57,6 +76,10 @@ def stream_reply(history: List[dict], system_prompt: str, model: str = DEFAULT_M
             continue
         role = "model" if m["role"] == "assistant" else "user"
         contents.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+
+    if image_data_url and contents and contents[-1].role == "user":
+        mime_type, image_bytes = _decode_data_url(image_data_url)
+        contents[-1].parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
 
     config = types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.6)
     stream = _get_client().models.generate_content_stream(model=model, contents=contents, config=config)

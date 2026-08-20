@@ -92,7 +92,12 @@ def trim_history(history: List[dict]) -> List[dict]:
     return history
 
 
-def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instructions: str = None) -> Iterator[str]:
+def stream_reply(
+    history: List[dict],
+    model: str = DEFAULT_MODEL,
+    custom_instructions: str = None,
+    image_data_url: str = None,
+) -> Iterator[str]:
     """
     Given a conversation history (list of {"role", "content"} dicts, no
     system message - just user/assistant turns), stream the assistant's
@@ -107,6 +112,19 @@ def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instruc
             f"being safe or honest:\n{custom_instructions}"
         )
     trimmed = trim_history(history)
+
+    # None of Groq's current free models are multimodal - a pasted image
+    # can only be understood by Gemini, so route straight there and skip
+    # Groq entirely for this turn.
+    if image_data_url:
+        if not txl_gemini.is_configured():
+            raise RuntimeError(
+                "Image understanding isn't set up on this deployment yet - "
+                "ask whoever runs it to configure GEMINI_API_KEY."
+            )
+        yield from txl_gemini.stream_reply(trimmed, system_prompt, image_data_url=image_data_url)
+        return
+
     messages = [{"role": "system", "content": system_prompt}] + trimmed
 
     last_error = None

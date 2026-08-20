@@ -50,6 +50,7 @@ def _migrate(engine):
         "ALTER TABLE messages ADD COLUMN tool_name VARCHAR(64)",
         "ALTER TABLE users ADD COLUMN reset_token VARCHAR(64)",
         "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP",
+        "ALTER TABLE messages ADD COLUMN image_data TEXT",
     ]
     for stmt in statements:
         try:
@@ -134,4 +135,5 @@ class Message(db.Model):
     tool_calls_json = db.Column(db.Text, nullable=True)  # set on an assistant message proposing tool call(s)
     tool_call_id = db.Column(db.String(64), nullable=True)  # set on a "tool" role message (the result)
     tool_name = db.Column(db.String(64), nullable=True)     # set on a "tool" role message (the result)
+    image_data = db.Column(db.Text, nullable=True)  # a pasted image, as a data: URL - set on a "user" message
     created_at = db.Column(db.DateTime, default=_utcnow)
