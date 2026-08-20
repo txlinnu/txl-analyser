@@ -1268,7 +1268,7 @@ def code_home():
     conv_id = request.args.get("c", type=int)
     conv = models.Conversation.query.filter_by(id=conv_id, user_id=user.id, mode="code").first() if conv_id else None
 
-    workspace_root = code_agent.user_workspace(user.id)
+    workspace_root = code_agent.resolve_workspace(user.id, conv.workspace_path if conv else None)
 
     if conv:
         transcript = _render_code_transcript(conv)
@@ -1291,11 +1291,29 @@ def code_home():
         projects=sidebar["projects"],
         ungrouped=sidebar["ungrouped"],
         workspace=str(workspace_root),
+        allow_custom_workspace=code_agent.ALLOW_CUSTOM_WORKSPACE,
         analyser_url=ANALYSER_URL,
         pygments_css=PYGMENTS_CSS,
         header_badge=HEADER_BADGE,
         user_email=user.email,
     )
+
+
+@app.route("/code/<int:conv_id>/workspace", methods=["POST"])
+def code_set_workspace(conv_id):
+    if not code_agent.ALLOW_CUSTOM_WORKSPACE:
+        return jsonify({"error": "Custom project folders aren't enabled on this deployment."}), 403
+    conv = models.Conversation.query.filter_by(id=conv_id, user_id=g.user.id, mode="code").first()
+    if not conv:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        path = code_agent.validate_custom_workspace(data.get("path"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    conv.workspace_path = str(path)
+    models.db.session.commit()
+    return jsonify({"ok": True, "path": str(path)})
 
 
 @app.route("/code/send", methods=["POST"])
@@ -1314,6 +1332,12 @@ def code_send():
     is_new = conv is None
     if is_new:
         conv = models.Conversation(user_id=user.id, mode="code", title=_make_title(message))
+        requested_path = (data.get("workspace_path") or "").strip()
+        if requested_path and code_agent.ALLOW_CUSTOM_WORKSPACE:
+            try:
+                conv.workspace_path = str(code_agent.validate_custom_workspace(requested_path))
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
         models.db.session.add(conv)
         models.db.session.commit()
     elif _pending(conv):
@@ -1322,7 +1346,7 @@ def code_send():
     models.db.session.add(models.Message(conversation_id=conv.id, role="user", content=message))
     models.db.session.commit()
     conv_id, conv_title = conv.id, conv.title
-    workspace_root = code_agent.user_workspace(user.id)
+    workspace_root = code_agent.resolve_workspace(user.id, conv.workspace_path)
 
     def generate():
         if is_new:
@@ -1341,7 +1365,7 @@ def code_approve():
     pending = _pending(conv)
     if not pending:
         return jsonify({"error": "Nothing pending."}), 400
-    workspace_root = code_agent.user_workspace(g.user.id)
+    workspace_root = code_agent.resolve_workspace(g.user.id, conv.workspace_path)
     try:
         result = code_agent.execute_pending(pending["name"], pending["arguments"], workspace_root)
     except Exception as e:
@@ -1378,7 +1402,7 @@ def code_deny():
     _save_pending(conv, None)
     conv_id = conv.id
     model = ACCURATE_MODEL if data.get("model") == "auto" else pick_model(data)
-    workspace_root = code_agent.user_workspace(g.user.id)
+    workspace_root = code_agent.resolve_workspace(g.user.id, conv.workspace_path)
     return Response(stream_with_context(_run_code_loop(conv_id, model, workspace_root)), mimetype="text/event-stream")
 
 

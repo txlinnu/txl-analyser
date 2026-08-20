@@ -103,6 +103,11 @@
   .workspace-box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
   .workspace-box .label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px; }
   .workspace-box .path { font-size: 0.76rem; word-break: break-all; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .workspace-change-btn {
+    margin-top: 8px; border: 1px solid var(--border); background: var(--main-bg); color: var(--muted);
+    font-size: 0.72rem; font-weight: 600; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  }
+  .workspace-change-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   .sidebar-search {
     width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
@@ -263,9 +268,9 @@
   .error-note { max-width: 780px; margin: 0 auto 16px; background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 10px; padding: 11px 14px; font-size: 0.86rem; }
 
   #composer-outer { flex-shrink: 0; padding: 10px 20px 22px; }
-  .composer-inner { max-width: 780px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 10px 10px 10px 16px; box-shadow: var(--shadow); }
-  #input { flex: 1; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 0.94rem; resize: none; outline: none; max-height: 200px; padding: 8px 0; }
-  button.send-btn { flex-shrink: 0; width: 36px; height: 36px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .composer-inner { max-width: 780px; margin: 0 auto; display: flex; align-items: flex-end; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 14px 14px 14px 22px; box-shadow: var(--shadow); }
+  #input { flex: 1; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 1.02rem; resize: none; outline: none; max-height: 200px; padding: 11px 0; }
+  button.send-btn { flex-shrink: 0; width: 42px; height: 42px; border: none; border-radius: 13px; background: var(--accent); color: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
   button.send-btn:hover { background: var(--accent-hover); }
   button.send-btn:disabled { opacity: 0.4; cursor: default; }
   .footnote { max-width: 780px; margin: 8px auto 0; text-align: center; font-size: 0.72rem; color: var(--muted); }
@@ -319,7 +324,10 @@
     <a class="nav-link" href="/artifacts">🗄 Artifacts</a>
     <div class="workspace-box">
       <div class="label">Workspace</div>
-      <div class="path">{{ workspace }}</div>
+      <div class="path" id="workspace-path">{{ workspace }}</div>
+      {% if allow_custom_workspace %}
+      <button class="workspace-change-btn" id="workspace-change-btn" type="button">Change folder…</button>
+      {% endif %}
     </div>
     <input class="sidebar-search" id="sidebar-search" type="text" placeholder="Search sessions...">
 
@@ -430,6 +438,7 @@ const sidebarSearch = document.getElementById('sidebar-search');
 const quotedSlot = document.getElementById('quoted-slot');
 
 let currentConvId = {{ (active_id | tojson) if active_id else 'null' }};
+let pendingWorkspacePath = null; // set via "Change folder..." before the first message of a new session
 let busy = false;
 let currentPendingCard = null;
 
@@ -654,7 +663,10 @@ async function sendMessage() {
     const resp = await fetch('/code/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, model: modelSelect.value, conv_id: currentConvId }),
+      body: JSON.stringify({
+        message: text, model: modelSelect.value, conv_id: currentConvId,
+        workspace_path: currentConvId ? undefined : pendingWorkspacePath || undefined,
+      }),
     });
     await streamEvents(resp);
   } catch (err) {
@@ -690,6 +702,34 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 newChatBtn.addEventListener('click', () => { window.location.href = '/code'; });
+
+const workspaceChangeBtn = document.getElementById('workspace-change-btn');
+if (workspaceChangeBtn) {
+  workspaceChangeBtn.addEventListener('click', async () => {
+    const current = document.getElementById('workspace-path').textContent;
+    const input = window.prompt('Full folder path (e.g. C:\\Projects\\my-app):', current);
+    if (input === null) return;
+    const path = input.trim();
+    if (!path) return;
+    if (currentConvId) {
+      try {
+        const resp = await fetch('/code/' + currentConvId + '/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { addErrorNote(data.error || 'Could not change the folder.'); return; }
+        document.getElementById('workspace-path').textContent = data.path;
+      } catch (err) {
+        addErrorNote(err.message || 'Could not change the folder.');
+      }
+    } else {
+      pendingWorkspacePath = path;
+      document.getElementById('workspace-path').textContent = path + ' (will be used once you send a message)';
+    }
+  });
+}
 
 sidebarToggle.addEventListener('click', () => {
   sidebar.classList.toggle('open');

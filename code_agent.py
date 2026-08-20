@@ -34,6 +34,13 @@ BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE_ROOT = Path(os.environ.get("CODE_WORKSPACE", BASE_DIR / "workspace")).resolve()
 WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
 
+# Off by default (and MUST stay off on the shared live site) - lets Code
+# mode point at an arbitrary real folder on disk instead of the sandboxed
+# per-user workspace. Only safe to enable on a single-user local install,
+# where "arbitrary folder on disk" just means the owner's own machine.
+# Set ALLOW_CUSTOM_WORKSPACE=1 in that local deployment's environment only.
+ALLOW_CUSTOM_WORKSPACE = os.environ.get("ALLOW_CUSTOM_WORKSPACE", "0") == "1"
+
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -45,6 +52,36 @@ def user_workspace(user_id) -> Path:
     path = WORKSPACE_ROOT / f"user_{uid}"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def resolve_workspace(user_id, custom_path: str = None) -> Path:
+    """Same as user_workspace(), but honors a per-conversation custom folder
+    path when ALLOW_CUSTOM_WORKSPACE is enabled - falls back to the normal
+    sandboxed workspace otherwise (including when the flag is off, so a
+    stray custom_path from an old conversation can never do anything on a
+    deployment where this wasn't explicitly turned on)."""
+    if ALLOW_CUSTOM_WORKSPACE and custom_path:
+        path = Path(custom_path).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return user_workspace(user_id)
+
+
+def validate_custom_workspace(raw_path: str) -> Path:
+    """Validates a user-supplied folder path for use as a custom workspace.
+    Raises ValueError with a user-facing message on anything invalid."""
+    if not ALLOW_CUSTOM_WORKSPACE:
+        raise ValueError("Custom project folders aren't enabled on this deployment.")
+    raw_path = (raw_path or "").strip()
+    if not raw_path:
+        raise ValueError("Enter a folder path.")
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        raise ValueError("Use a full path (e.g. C:\\Projects\\my-app or /home/you/my-app).")
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"'{raw_path}' exists but isn't a folder.")
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
 
 MAX_TOOL_STEPS = 8       # per user turn - guards against runaway tool-call loops
 COMMAND_TIMEOUT = 60     # seconds

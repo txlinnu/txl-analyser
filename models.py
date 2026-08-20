@@ -51,6 +51,7 @@ def _migrate(engine):
         "ALTER TABLE users ADD COLUMN reset_token VARCHAR(64)",
         "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP",
         "ALTER TABLE messages ADD COLUMN image_data TEXT",
+        "ALTER TABLE conversations ADD COLUMN workspace_path TEXT",
     ]
     for stmt in statements:
         try:
@@ -118,6 +119,7 @@ class Conversation(db.Model):
     title = db.Column(db.String(200), nullable=False, default="New chat")
     pinned = db.Column(db.Boolean, default=False, nullable=False)
     pending_json = db.Column(db.Text, nullable=True)  # Code mode only: an approval awaiting the user
+    workspace_path = db.Column(db.Text, nullable=True)  # Code mode only: custom folder (see code_agent.ALLOW_CUSTOM_WORKSPACE)
     created_at = db.Column(db.DateTime, default=_utcnow)
     messages = db.relationship(
         "Message", backref="conversation", cascade="all, delete-orphan",
