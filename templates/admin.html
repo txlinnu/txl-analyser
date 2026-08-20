@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - TXL Cloud</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.85em%22 font-size=%2290%22 fill=%22%23C15F3C%22>✦</text></svg>">
+<style>
+  :root {
+    --sidebar-bg: #F0EEE6; --sidebar-border: #E5E1D6; --main-bg: #FAF9F6;
+    --card: #ffffff; --text: #3D3929; --muted: #837F72; --border: #E5E1D6;
+    --accent: #C15F3C; --accent-hover: #A94F30; --accent-soft: #F3E3D8;
+    --shadow: 0 1px 2px rgba(61,57,41,0.04), 0 8px 24px rgba(61,57,41,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --sidebar-bg: #201F1D; --sidebar-border: #33312C; --main-bg: #262624;
+      --card: #2D2C29; --text: #E8E6DC; --muted: #9A9587; --border: #3A3833;
+      --accent: #D97757; --accent-hover: #E68A6C; --accent-soft: #3A2A20;
+      --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --sidebar-bg: #201F1D; --sidebar-border: #33312C; --main-bg: #262624;
+    --card: #2D2C29; --text: #E8E6DC; --muted: #9A9587; --border: #3A3833;
+    --accent: #D97757; --accent-hover: #E68A6C; --accent-soft: #3A2A20;
+    --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.3);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--main-bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; }
+  .app-shell { display: flex; height: 100vh; overflow: hidden; }
+
+  .sidebar { width: 260px; flex-shrink: 0; background: var(--sidebar-bg); border-right: 1px solid var(--sidebar-border); display: flex; flex-direction: column; padding: 16px 12px; }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 6px 8px 18px; font-weight: 700; font-size: 1.02rem; }
+  .brand .mark { color: var(--accent); font-size: 1.15rem; }
+  .nav-link { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; color: var(--text); text-decoration: none; margin-bottom: 4px; }
+  .nav-link:hover { background: var(--border); }
+  .nav-link.active { background: var(--accent-soft); color: var(--accent); }
+  .sidebar-footer { border-top: 1px solid var(--sidebar-border); padding-top: 12px; margin-top: auto; }
+  .sidebar-footer a { display: block; padding: 7px 8px; font-size: 0.82rem; color: var(--muted); text-decoration: none; border-radius: 8px; }
+  .sidebar-footer a:hover { background: var(--border); color: var(--text); }
+  .user-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px 10px; font-size: 0.78rem; }
+  .user-email { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-row form { flex-shrink: 0; }
+  .logout-btn { border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 0.72rem; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+  .logout-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+  main { flex: 1; overflow-y: auto; padding: 28px 32px; }
+  .page-header { max-width: 900px; margin: 0 auto 22px; }
+  .page-header h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .page-header p { color: var(--muted); margin: 0; font-size: 0.9rem; }
+
+  .stat-grid { max-width: 900px; margin: 0 auto 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .stat-card { border: 1px solid var(--border); background: var(--card); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat-card .num { font-size: 1.6rem; font-weight: 700; }
+  .stat-card .label { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+  .table-wrap { max-width: 900px; margin: 0 auto; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--card); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 700; }
+  tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="mark">✦</span> TXL Cloud</div>
+    <a class="nav-link" href="/">🏠 Home</a>
+    <a class="nav-link" href="/code">⌨ Code</a>
+    <a class="nav-link" href="/artifacts">🗄 Artifacts</a>
+    <a class="nav-link active" href="/admin">🛡 Admin</a>
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <span class="user-email" title="{{ user_email }}">{{ user_email }}</span>
+        <form method="POST" action="/logout"><button type="submit" class="logout-btn">Log out</button></form>
+      </div>
+      <a href="{{ analyser_url }}">← TXL Analyser</a>
+    </div>
+  </aside>
+
+  <main>
+    <div class="page-header">
+      <h1>🛡 Admin</h1>
+      <p>Usage across all accounts on this deployment.</p>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card"><div class="num">{{ stats.total_users }}</div><div class="label">Total accounts</div></div>
+      <div class="stat-card"><div class="num">{{ stats.signups_7d }}</div><div class="label">Signups (7 days)</div></div>
+      <div class="stat-card"><div class="num">{{ stats.total_chat_convs }}</div><div class="label">Chats</div></div>
+      <div class="stat-card"><div class="num">{{ stats.total_code_convs }}</div><div class="label">Code sessions</div></div>
+      <div class="stat-card"><div class="num">{{ stats.total_messages }}</div><div class="label">Messages</div></div>
+      <div class="stat-card"><div class="num">{{ stats.total_projects }}</div><div class="label">Projects</div></div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Email</th><th>Joined</th><th>Conversations</th></tr></thead>
+        <tbody>
+          {% for u in recent_users %}
+          <tr>
+            <td>{{ u.email }}</td>
+            <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '—' }} UTC</td>
+            <td>{{ u.conversations }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">No accounts yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+const savedTheme = localStorage.getItem('txlcloud-theme');
+if (savedTheme === 'light' || savedTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', savedTheme);
+}
+</script>
+</body>
+</html>

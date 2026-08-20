@@ -17,16 +17,34 @@ Safety model:
 Workspace: defaults to a workspace/ folder next to this file, so the
 agent can't accidentally touch this app's own source. Point it at a real
 project instead by setting CODE_WORKSPACE to that folder's path.
+
+Multi-account isolation: this app has real user accounts (models.py), so
+every tool call is scoped to a per-user subfolder via user_workspace(uid)
+- WORKSPACE_ROOT/user_<id>/ - never the shared root directly. One
+account's files/commands can never see or touch another's.
 """
 
 import difflib
 import os
+import re
 import subprocess
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE_ROOT = Path(os.environ.get("CODE_WORKSPACE", BASE_DIR / "workspace")).resolve()
 WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
+
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def user_workspace(user_id) -> Path:
+    """Each account gets its own isolated subfolder - never share WORKSPACE_ROOT directly."""
+    uid = str(user_id)
+    if not _SAFE_ID_RE.match(uid):
+        raise ValueError("Invalid user id.")
+    path = WORKSPACE_ROOT / f"user_{uid}"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 MAX_TOOL_STEPS = 8       # per user turn - guards against runaway tool-call loops
 COMMAND_TIMEOUT = 60     # seconds
@@ -120,17 +138,17 @@ confirming it. Do not describe an action as done from memory or \
 assumption - if you didn't call the tool, it didn't happen."""
 
 
-def _safe_path(rel_path: str) -> Path:
+def _safe_path(rel_path: str, workspace_root: Path) -> Path:
     rel_path = (rel_path or ".").strip()
-    target = (WORKSPACE_ROOT / rel_path).resolve()
-    if target != WORKSPACE_ROOT and WORKSPACE_ROOT not in target.parents:
+    target = (workspace_root / rel_path).resolve()
+    if target != workspace_root and workspace_root not in target.parents:
         raise ValueError(f"'{rel_path}' is outside the workspace and isn't allowed.")
     return target
 
 
-def _tool_list_directory(args: dict) -> str:
+def _tool_list_directory(args: dict, workspace_root: Path) -> str:
     rel = args.get("path", ".")
-    path = _safe_path(rel)
+    path = _safe_path(rel, workspace_root)
     if not path.exists():
         return f"Error: '{rel}' does not exist."
     if not path.is_dir():
@@ -141,9 +159,9 @@ def _tool_list_directory(args: dict) -> str:
     return "\n".join((name + "/") if (path / name).is_dir() else name for name in entries)
 
 
-def _tool_read_file(args: dict) -> str:
+def _tool_read_file(args: dict, workspace_root: Path) -> str:
     rel = args.get("path", "")
-    path = _safe_path(rel)
+    path = _safe_path(rel, workspace_root)
     if not path.exists():
         return f"Error: '{rel}' does not exist."
     if not path.is_file():
@@ -157,21 +175,21 @@ def _tool_read_file(args: dict) -> str:
     return text
 
 
-def execute_tool(name: str, args: dict) -> str:
+def execute_tool(name: str, args: dict, workspace_root: Path) -> str:
     """Runs a read-only tool immediately. Never call this for write_file/run_command."""
     if name == "list_directory":
-        return _tool_list_directory(args)
+        return _tool_list_directory(args, workspace_root)
     if name == "read_file":
-        return _tool_read_file(args)
+        return _tool_read_file(args, workspace_root)
     return f"Error: unknown tool '{name}'."
 
 
-def describe_pending(name: str, args: dict) -> dict:
+def describe_pending(name: str, args: dict, workspace_root: Path) -> dict:
     """Human-readable description of a proposed write/exec action, for the approval UI."""
     if name == "write_file":
         rel_path = args.get("path", "")
         try:
-            path = _safe_path(rel_path)
+            path = _safe_path(rel_path, workspace_root)
         except ValueError as e:
             return {"kind": "write_file", "path": rel_path, "error": str(e)}
         old = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
@@ -191,10 +209,10 @@ def describe_pending(name: str, args: dict) -> dict:
     return {"kind": name, "args": args}
 
 
-def execute_pending(name: str, args: dict) -> str:
+def execute_pending(name: str, args: dict, workspace_root: Path) -> str:
     """Actually performs a write_file or run_command action. Only call after user approval."""
     if name == "write_file":
-        path = _safe_path(args.get("path", ""))
+        path = _safe_path(args.get("path", ""), workspace_root)
         content = args.get("content", "")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
@@ -205,7 +223,7 @@ def execute_pending(name: str, args: dict) -> str:
             return "Error: empty command."
         try:
             result = subprocess.run(
-                command, shell=True, cwd=WORKSPACE_ROOT,
+                command, shell=True, cwd=workspace_root,
                 capture_output=True, text=True, timeout=COMMAND_TIMEOUT,
             )
         except subprocess.TimeoutExpired:

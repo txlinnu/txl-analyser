@@ -28,6 +28,23 @@ database, or every deploy would silently delete everyone's account:
      Groq account discussed earlier, to keep its quota independent of
      TXL Analyser's
    - `SITE_PASSWORD` — optional extra password gate on top of accounts
+   - `SIGNUP_INVITE_CODE` — optional: requires this code to sign up, so
+     having `SITE_PASSWORD` alone doesn't let anyone create their own
+     account (and use Code mode's `run_command` on this server)
+   - `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` — optional, enables the
+     "Forgot password" email. Any SMTP account works, e.g. a free Gmail
+     account with an **app password** (not your normal login password) -
+     generate one at https://myaccount.google.com/apppasswords. Without
+     these set, "Forgot password" tells the user it isn't configured
+     instead of pretending to send an email.
+   - `GEMINI_API_KEY` — optional automatic fallback: if Groq's daily free
+     quota runs out, chats seamlessly switch to Gemini instead of erroring
+     out for the rest of the day. Free key (no credit card):
+     https://aistudio.google.com/apikey. Leave unset to skip - Groq
+     requests just fail normally once exhausted, same as before.
+   - `ADMIN_EMAILS` — optional, comma-separated emails that can see
+     `/admin` (account/usage counts). Leave unset and nobody can, including
+     you - the route 404s for everyone and no "Admin" link shows.
 
 **Only the Groq backend can be deployed this way** - Ollama needs real
 GPU/CPU compute running locally, which Render's free tier doesn't provide.

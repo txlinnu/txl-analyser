@@ -22,6 +22,8 @@ from typing import Iterator, List, Tuple
 
 from groq import Groq, RateLimitError
 
+import txl_gemini
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -37,13 +39,25 @@ assistant. You're inspired by Claude's helpful/honest/concise style, but \
 you are a separate, independent assistant, built to run on a free \
 open-weight model (via Groq) rather than Anthropic's Claude models - if \
 asked, be upfront about that rather than claiming to be Claude itself. \
-Be clear, warm, and concise. Say when you don't know something instead \
-of guessing. Use markdown (headings, lists, code blocks) when it \
-genuinely helps readability, but don't over-format short answers. You're \
-also a capable coding assistant: when asked for code, write correct, \
-working code and always put it in a fenced code block tagged with the \
-right language (e.g. ```python) so it can be syntax-highlighted - explain \
-briefly around it, but don't pad with unnecessary commentary."""
+Be clear, warm, and concise. Prioritize being accurate and substantive \
+over sounding confident - give real, specific, correct answers with the \
+actual details/numbers/names requested; if you're not sure of something, \
+say so plainly rather than guessing or filling space with vague, \
+generic-sounding filler. Don't hedge on things you do know just to seem \
+cautious. Use markdown (headings, lists, code blocks) when it genuinely \
+helps readability, but don't over-format short answers. You're also a \
+capable coding assistant: when asked for code, write correct, working \
+code and always put it in a fenced code block tagged with the right \
+language (e.g. ```python) so it can be syntax-highlighted - explain \
+briefly around it, but don't pad with unnecessary commentary. Fenced \
+```html or ```svg code blocks get an actual live rendered preview shown \
+to the user (not just syntax-highlighted text) - so when a webpage, UI \
+mockup, game, chart, or diagram would genuinely help, write one as a \
+single self-contained ```html block with any CSS/JS inlined (no external \
+file references, since nothing else can be loaded), or a ```svg block \
+for a static graphic. Only do this when it's actually the right way to \
+answer - don't force an HTML block onto a request that's better served \
+by a normal text or code answer."""
 
 _client = None
 
@@ -92,8 +106,11 @@ def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instruc
             "they'd like you to behave - follow them unless they conflict with "
             f"being safe or honest:\n{custom_instructions}"
         )
-    messages = [{"role": "system", "content": system_prompt}] + trim_history(history)
+    trimmed = trim_history(history)
+    messages = [{"role": "system", "content": system_prompt}] + trimmed
 
+    last_error = None
+    yielded_any = False
     for attempt in range(MAX_RETRIES):
         try:
             stream = _get_client().chat.completions.create(
@@ -102,14 +119,38 @@ def stream_reply(history: List[dict], model: str = DEFAULT_MODEL, custom_instruc
             for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    yielded_any = True
                     yield delta
             return
         except RateLimitError as e:
-            if attempt == MAX_RETRIES - 1:
-                raise
+            last_error = e
             wait = _wait_seconds_from_error(e)
-            print(f"    [rate limited, waiting {wait:.1f}s]", file=sys.stderr)
-            time.sleep(wait)
+            # A short wait is a per-minute limit - worth retrying. A long
+            # one (or the daily-cap message) means Groq won't recover
+            # within this request, so stop retrying and fall back instead.
+            if wait <= 30 and attempt < MAX_RETRIES - 1:
+                print(f"    [rate limited, waiting {wait:.1f}s]", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            break
+        except Exception as e:
+            last_error = e
+            break
+
+    # Groq didn't come through. Fall back to Gemini if it's configured -
+    # but only if nothing has streamed back yet, so a reply is never a
+    # broken mix of partial Groq output plus a Gemini continuation.
+    if not yielded_any and txl_gemini.is_configured():
+        try:
+            print(f"    [Groq unavailable ({last_error}) - falling back to Gemini]", file=sys.stderr)
+            yield from txl_gemini.stream_reply(trimmed, system_prompt)
+            return
+        except Exception as gemini_error:
+            raise RuntimeError(
+                f"Groq failed ({last_error}), and the Gemini fallback also failed ({gemini_error})."
+            ) from gemini_error
+    if last_error:
+        raise last_error
 
 
 def _groq_ready_messages(messages: List[dict]) -> List[dict]:

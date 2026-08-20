@@ -243,12 +243,24 @@
   .project-group.collapsed .project-toggle { transform: rotate(-90deg); }
   .project-group.collapsed .project-items { display: none; }
   .project-items { padding-left: 14px; }
-  .project-delete-btn {
+  .project-delete-btn, .project-files-btn {
     border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.72rem;
     padding: 2px 5px; border-radius: 5px; flex-shrink: 0; opacity: 0;
   }
-  .project-head:hover .project-delete-btn { opacity: 1; }
+  .project-head:hover .project-delete-btn, .project-head:hover .project-files-btn { opacity: 1; }
   .project-delete-btn:hover { color: var(--danger-text); background: var(--card); }
+  .project-files-btn:hover { color: var(--accent); background: var(--card); }
+
+  .project-files-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .project-file-row {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.82rem;
+  }
+  .project-file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-file-row .size { color: var(--muted); font-size: 0.74rem; flex-shrink: 0; }
+  .project-file-remove { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
+  .project-file-remove:hover { color: var(--danger-text); }
+  .project-files-empty { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
 
   .conv-action.pin-btn { opacity: 0.35; }
   .conv-action.pin-btn.pinned, .conv-action.pin-btn:hover { opacity: 1; }
@@ -427,6 +439,28 @@
     word-wrap: break-word;
   }
   .msg.user .bubble { background: var(--user-bubble); }
+  .msg-col { display: flex; flex-direction: column; min-width: 0; }
+  .msg.user .msg-col { align-items: flex-end; max-width: 82%; }
+  .msg.assistant .msg-col { flex: 1; min-width: 0; max-width: calc(100% - 36px); }
+  .msg-actions { display: flex; gap: 4px; margin-top: 3px; opacity: 0; transition: opacity 0.1s ease; }
+  .msg:hover .msg-actions { opacity: 1; }
+  .msg-actions.always-visible { opacity: 1; }
+  .msg-action {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    font-size: 0.72rem; padding: 3px 6px; border-radius: 5px;
+  }
+  .msg-action:hover { color: var(--accent); background: var(--border); }
+  .msg-edit-box textarea {
+    width: 100%; min-width: 260px; padding: 10px 12px; border: 1px solid var(--accent);
+    border-radius: 12px; background: var(--card); color: var(--text); font-family: inherit;
+    font-size: 0.94rem; resize: vertical;
+  }
+  .msg-edit-actions { display: flex; gap: 8px; margin-top: 6px; justify-content: flex-end; }
+  .msg-edit-actions button {
+    padding: 6px 12px; border-radius: 7px; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--border);
+  }
+  .msg-edit-save { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .msg-edit-cancel { background: var(--card); color: var(--text); }
   .msg.assistant { align-items: flex-start; gap: 10px; max-width: 100%; }
   .msg.assistant .avatar {
     width: 26px; height: 26px; flex-shrink: 0;
@@ -624,8 +658,8 @@
     border-left: 1px solid transparent;
     transition: width 0.22s ease;
   }
-  .artifact-panel.open { width: 440px; border-left-color: var(--border); }
-  .artifact-panel-inner { width: 440px; height: 100%; display: flex; flex-direction: column; }
+  .artifact-panel.open { width: 560px; border-left-color: var(--border); }
+  .artifact-panel-inner { width: 560px; height: 100%; display: flex; flex-direction: column; }
   .artifact-panel-header {
     display: flex;
     align-items: center;
@@ -657,6 +691,32 @@
   .artifact-panel-body { flex: 1; overflow: auto; padding: 14px; }
   .artifact-panel-body .bubble { max-width: none; padding: 0; }
   .artifact-panel-body .bubble pre { padding-top: 12px; }
+
+  .artifact-panel-tabs {
+    display: none;
+    gap: 4px;
+    padding: 8px 14px 0;
+    flex-shrink: 0;
+  }
+  .artifact-tab {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .artifact-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .artifact-tab:hover:not(.active) { color: var(--text); }
+  .artifact-preview-frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: #fff;
+  }
 
   /* ---------- Settings modal ---------- */
   .modal-scrim {
@@ -740,6 +800,7 @@
     </div>
     <button class="new-chat-pill" id="new-chat-btn" type="button">＋ New chat</button>
     <a class="nav-link" href="/artifacts">🗄 Artifacts</a>
+    {% if show_admin_link %}<a class="nav-link" href="/admin">🛡 Admin</a>{% endif %}
     <button class="nav-link" id="customize-btn" type="button">🎨 Customize</button>
     <input class="sidebar-search" id="sidebar-search" type="text" placeholder="Search chats...">
 
@@ -760,6 +821,7 @@
           <div class="project-head">
             <span class="project-toggle">▾</span>
             <span class="project-name">📁 {{ proj.name }}</span>
+            <button class="project-files-btn" type="button" title="Knowledge files">📎</button>
             <button class="project-delete-btn" type="button" title="Delete project">✕</button>
           </div>
           <div class="conv-group-items project-items">
@@ -798,11 +860,25 @@
       <div class="msgs-wrap" id="msgs-wrap">
         {% for m in history %}
           {% if m.role == 'user' %}
-            <div class="msg user"><div class="bubble">{{ m.text }}</div></div>
+            <div class="msg user" data-msg-id="{{ m.id }}">
+              <div class="msg-col">
+                <div class="bubble">{{ m.text }}</div>
+                <div class="msg-actions">
+                  <button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button>
+                </div>
+              </div>
+            </div>
           {% else %}
-            <div class="msg assistant">
+            <div class="msg assistant" data-msg-id="{{ m.id }}">
               <div class="avatar">✦</div>
-              <div class="bubble">{{ m.html | safe }}</div>
+              <div class="msg-col">
+                <div class="bubble">{{ m.html | safe }}</div>
+                {% if m.is_last %}
+                <div class="msg-actions always-visible">
+                  <button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>
+                </div>
+                {% endif %}
+              </div>
             </div>
           {% endif %}
         {% endfor %}
@@ -847,6 +923,12 @@
           <button class="panel-btn icon" id="artifact-close-btn" type="button" aria-label="Close">✕</button>
         </div>
       </div>
+      <div class="artifact-panel-tabs" id="artifact-panel-tabs">
+        <button class="artifact-tab active" data-tab="preview" type="button">▶ Preview</button>
+        <button class="artifact-tab" data-tab="code" type="button">&lt;/&gt; Code</button>
+      </div>
+      <iframe class="artifact-preview-frame" id="artifact-preview-frame" style="display:none;"
+              sandbox="allow-scripts" title="Artifact preview"></iframe>
       <div class="artifact-panel-body" id="artifact-panel-body"></div>
     </div>
   </aside>
@@ -872,6 +954,23 @@
       <div class="setting-value">{{ header_badge }}</div>
     </div>
     <button class="danger-btn" id="clear-all-btn" type="button">Clear all chats on this browser</button>
+
+    <div id="delete-account-section">
+      <button class="danger-btn" id="delete-account-btn" type="button">Delete my account</button>
+      <div id="delete-account-confirm" style="display:none; margin-top:10px;">
+        <p style="font-size:0.78rem; color:var(--danger-text); margin:0 0 8px;">
+          This permanently deletes your account, all chats, projects, and Code-mode files. This can't be undone.
+        </p>
+        <input type="password" id="delete-account-password" placeholder="Confirm your password"
+               style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--main-bg); color:var(--text); font-size:0.85rem; margin-bottom:8px;">
+        <div style="display:flex; gap:8px;">
+          <button class="danger-btn" id="delete-account-confirm-btn" type="button" style="flex:1;">Permanently delete</button>
+          <button id="delete-account-cancel-btn" type="button"
+                  style="flex:1; padding:9px; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:8px; font-size:0.85rem; cursor:pointer;">Cancel</button>
+        </div>
+        <p id="delete-account-error" style="display:none; font-size:0.78rem; color:var(--danger-text); margin:8px 0 0;"></p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -888,6 +987,22 @@
     </div>
     <p style="font-size:0.76rem;color:var(--muted);margin:0;">Saved on this browser only, sent along with new messages. Doesn't affect Code mode.</p>
     <button class="approve-btn-like" id="customize-save-btn" type="button" style="width:100%;padding:9px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;">Save</button>
+  </div>
+</div>
+
+<div class="modal-scrim" id="project-files-scrim"></div>
+<div class="modal" id="project-files-modal">
+  <div class="modal-header">
+    <h3 id="project-files-title">Project files</h3>
+    <button class="panel-btn icon" id="project-files-close-btn" type="button" aria-label="Close">✕</button>
+  </div>
+  <div class="modal-body">
+    <p style="font-size:0.78rem;color:var(--muted);margin:0 0 4px;">
+      Text/code files attached here are included as reference material in every chat inside this project (up to {{ '10' }} files, ~40K characters each).
+    </p>
+    <div class="project-files-list" id="project-files-list"></div>
+    <button class="approve-btn-like" id="project-files-add-btn" type="button" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-weight:600;cursor:pointer;">＋ Add file</button>
+    <input type="file" id="project-file-input" accept=".txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.yml,.yaml,.log" style="display:none;">
   </div>
 </div>
 
@@ -931,19 +1046,63 @@ function addUserMessage(text) {
   chatMain.classList.remove('landing');
   const div = document.createElement('div');
   div.className = 'msg user';
-  div.innerHTML = '<div class="bubble"></div>';
+  div.innerHTML =
+    '<div class="msg-col">' +
+      '<div class="bubble"></div>' +
+      '<div class="msg-actions"><button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button></div>' +
+    '</div>';
   div.querySelector('.bubble').textContent = text;
   wrapEl.appendChild(div);
   scrollToBottom();
+  return div;
 }
 
 function addAssistantPlaceholder() {
+  // The reply about to stream in will be the new last one - the old "last
+  // reply" no longer gets a Regenerate button once a newer one exists.
+  wrapEl.querySelectorAll('.msg.assistant .msg-actions.always-visible').forEach(el => el.remove());
   const div = document.createElement('div');
   div.className = 'msg assistant';
-  div.innerHTML = '<div class="avatar">✦</div><div class="bubble streaming"></div>';
+  div.innerHTML = '<div class="avatar">✦</div><div class="msg-col"><div class="bubble streaming"></div></div>';
   wrapEl.appendChild(div);
   scrollToBottom();
   return div.querySelector('.bubble');
+}
+
+function finishAssistantBubble(bubble, html) {
+  bubble.classList.remove('streaming');
+  bubble.innerHTML = html;
+  enhanceCodeBlocks(bubble);
+  const col = bubble.closest('.msg-col');
+  if (col && !col.querySelector('.msg-actions')) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions always-visible';
+    actions.innerHTML = '<button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>';
+    col.appendChild(actions);
+  }
+}
+
+async function consumeSSE(resp, onEvent) {
+  if (!resp.ok || !resp.body) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.error || 'Something went wrong.');
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+    for (const part of parts) {
+      if (!part.startsWith('data: ')) continue;
+      const payload = JSON.parse(part.slice(6));
+      if (payload.error) throw new Error(payload.error);
+      onEvent(payload);
+    }
+  }
 }
 
 function enhanceCodeBlocks(root) {
@@ -1017,7 +1176,7 @@ async function sendMessage(text) {
   sendBtn.disabled = true;
   inputEl.value = '';
   autosize();
-  addUserMessage(text);
+  const userDiv = addUserMessage(text);
   const bubble = addAssistantPlaceholder();
 
   let raw = '';
@@ -1031,42 +1190,21 @@ async function sendMessage(text) {
         web_search: websearchToggle.classList.contains('active'),
       }),
     });
-
-    if (!resp.ok || !resp.body) {
-      const data = await resp.json().catch(() => ({}));
-      throw new Error(data.error || 'Something went wrong.');
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split('\n\n');
-      buffer = parts.pop();
-      for (const part of parts) {
-        if (!part.startsWith('data: ')) continue;
-        const payload = JSON.parse(part.slice(6));
-        if (payload.error) {
-          throw new Error(payload.error);
-        } else if (payload.conv_id) {
-          currentConvId = payload.conv_id;
-          history.pushState({}, '', '/?c=' + payload.conv_id);
-          addConvToSidebar(payload.conv_id, payload.title);
-        } else if (payload.done) {
-          bubble.classList.remove('streaming');
-          bubble.innerHTML = payload.html;
-          enhanceCodeBlocks(bubble);
-        } else if (payload.delta) {
-          raw += payload.delta;
-          bubble.textContent = raw;
-          scrollToBottom();
-        }
+    await consumeSSE(resp, (payload) => {
+      if (payload.user_message_id) {
+        userDiv.dataset.msgId = payload.user_message_id;
+      } else if (payload.conv_id) {
+        currentConvId = payload.conv_id;
+        history.pushState({}, '', '/?c=' + payload.conv_id);
+        addConvToSidebar(payload.conv_id, payload.title);
+      } else if (payload.done) {
+        finishAssistantBubble(bubble, payload.html);
+      } else if (payload.delta) {
+        raw += payload.delta;
+        bubble.textContent = raw;
+        scrollToBottom();
       }
-    }
+    });
   } catch (err) {
     bubble.closest('.msg').remove();
     addErrorNote(err.message || 'Something went wrong. Please try again.');
@@ -1076,6 +1214,116 @@ async function sendMessage(text) {
     inputEl.focus();
   }
 }
+
+async function regenerateLast() {
+  if (busy || !currentConvId) return;
+  const lastAssistant = [...wrapEl.querySelectorAll('.msg.assistant')].pop();
+  if (!lastAssistant) return;
+  busy = true;
+  sendBtn.disabled = true;
+  lastAssistant.remove();
+  const bubble = addAssistantPlaceholder();
+  let raw = '';
+  try {
+    const resp = await fetch('/conv/' + currentConvId + '/regenerate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelSelect.value,
+        custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
+      }),
+    });
+    await consumeSSE(resp, (payload) => {
+      if (payload.done) finishAssistantBubble(bubble, payload.html);
+      else if (payload.delta) { raw += payload.delta; bubble.textContent = raw; scrollToBottom(); }
+    });
+  } catch (err) {
+    bubble.closest('.msg').remove();
+    addErrorNote(err.message || 'Something went wrong. Please try again.');
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+  }
+}
+
+function startEditMessage(msgDiv) {
+  if (busy) return;
+  const col = msgDiv.querySelector('.msg-col');
+  const bubbleEl = col.querySelector('.bubble');
+  const actionsEl = col.querySelector('.msg-actions');
+  const originalText = bubbleEl.textContent;
+
+  const editBox = document.createElement('div');
+  editBox.className = 'msg-edit-box';
+  editBox.innerHTML =
+    '<textarea rows="3"></textarea>' +
+    '<div class="msg-edit-actions">' +
+      '<button class="msg-edit-cancel" type="button">Cancel</button>' +
+      '<button class="msg-edit-save" type="button">Save &amp; Submit</button>' +
+    '</div>';
+  const textarea = editBox.querySelector('textarea');
+  textarea.value = originalText;
+
+  bubbleEl.style.display = 'none';
+  actionsEl.style.display = 'none';
+  col.appendChild(editBox);
+  textarea.focus();
+
+  editBox.querySelector('.msg-edit-cancel').addEventListener('click', () => {
+    editBox.remove();
+    bubbleEl.style.display = '';
+    actionsEl.style.display = '';
+  });
+
+  editBox.querySelector('.msg-edit-save').addEventListener('click', async () => {
+    const newText = textarea.value.trim();
+    if (!newText || busy) return;
+    busy = true;
+    sendBtn.disabled = true;
+
+    // Everything after this message is about to be discarded server-side too.
+    let sib = msgDiv.nextElementSibling;
+    while (sib) { const next = sib.nextElementSibling; sib.remove(); sib = next; }
+
+    bubbleEl.textContent = newText;
+    editBox.remove();
+    bubbleEl.style.display = '';
+    actionsEl.style.display = '';
+
+    const bubble = addAssistantPlaceholder();
+    let raw = '';
+    try {
+      const resp = await fetch('/conv/' + currentConvId + '/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_id: msgDiv.dataset.msgId, message: newText,
+          model: modelSelect.value,
+          custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
+          web_search: websearchToggle.classList.contains('active'),
+        }),
+      });
+      await consumeSSE(resp, (payload) => {
+        if (payload.done) finishAssistantBubble(bubble, payload.html);
+        else if (payload.delta) { raw += payload.delta; bubble.textContent = raw; scrollToBottom(); }
+        // 'truncated' event: acknowledged implicitly, DOM already truncated above.
+      });
+    } catch (err) {
+      bubble.closest('.msg').remove();
+      addErrorNote(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+    }
+  });
+}
+
+wrapEl.addEventListener('click', (e) => {
+  const editBtn = e.target.closest('.edit-msg-btn');
+  const regenBtn = e.target.closest('.regenerate-btn');
+  if (editBtn) startEditMessage(editBtn.closest('.msg'));
+  else if (regenBtn) regenerateLast();
+});
 
 sendBtn.addEventListener('click', () => sendMessage());
 inputEl.addEventListener('keydown', (e) => {
@@ -1194,7 +1442,7 @@ document.getElementById('new-project-btn').addEventListener('click', async () =>
 
 document.querySelectorAll('.project-head').forEach(head => {
   head.addEventListener('click', (e) => {
-    if (e.target.closest('.project-delete-btn')) return;
+    if (e.target.closest('.project-delete-btn') || e.target.closest('.project-files-btn')) return;
     head.closest('.project-group').classList.toggle('collapsed');
   });
 });
@@ -1206,6 +1454,79 @@ document.querySelectorAll('.project-delete-btn').forEach(btn => {
     await fetch('/projects/' + pid + '/delete', { method: 'POST' });
     window.location.reload();
   });
+});
+
+/* ---------- Project knowledge files ---------- */
+const projectFilesModal = document.getElementById('project-files-modal');
+const projectFilesScrim = document.getElementById('project-files-scrim');
+const projectFilesTitle = document.getElementById('project-files-title');
+const projectFilesList = document.getElementById('project-files-list');
+const projectFilesAddBtn = document.getElementById('project-files-add-btn');
+const projectFileInput = document.getElementById('project-file-input');
+let currentFilesProjectId = null;
+
+async function refreshProjectFiles() {
+  const resp = await fetch('/projects/' + currentFilesProjectId + '/files');
+  const data = await resp.json();
+  const files = (data.files || []);
+  if (!files.length) {
+    projectFilesList.innerHTML = '<p class="project-files-empty">No files yet.</p>';
+    return;
+  }
+  projectFilesList.innerHTML = files.map(f =>
+    '<div class="project-file-row" data-file-id="' + f.id + '">' +
+      '<span class="name">📄 ' + escapeHtml(f.filename) + '</span>' +
+      '<span class="size">' + f.chars.toLocaleString() + ' chars</span>' +
+      '<button class="project-file-remove" type="button" title="Remove">✕</button>' +
+    '</div>'
+  ).join('');
+  projectFilesList.querySelectorAll('.project-file-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('.project-file-row');
+      await fetch('/projects/' + currentFilesProjectId + '/files/' + row.dataset.fileId + '/delete', { method: 'POST' });
+      refreshProjectFiles();
+    });
+  });
+}
+
+function openProjectFiles(projectId, projectName) {
+  currentFilesProjectId = projectId;
+  projectFilesTitle.textContent = '📁 ' + projectName + ' - files';
+  projectFilesModal.classList.add('open');
+  projectFilesScrim.classList.add('open');
+  refreshProjectFiles();
+}
+function closeProjectFiles() {
+  projectFilesModal.classList.remove('open');
+  projectFilesScrim.classList.remove('open');
+}
+document.getElementById('project-files-close-btn').addEventListener('click', closeProjectFiles);
+projectFilesScrim.addEventListener('click', closeProjectFiles);
+
+document.querySelectorAll('.project-files-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const group = btn.closest('.project-group');
+    const name = group.querySelector('.project-name').textContent.replace('📁 ', '');
+    openProjectFiles(group.dataset.projectId, name);
+  });
+});
+
+projectFilesAddBtn.addEventListener('click', () => projectFileInput.click());
+projectFileInput.addEventListener('change', async () => {
+  const file = projectFileInput.files[0];
+  projectFileInput.value = '';
+  if (!file) return;
+  if (file.size > 300000) { alert('That file is too large (max ~300 KB).'); return; }
+  const text = await file.text();
+  const resp = await fetch('/projects/' + currentFilesProjectId + '/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, content: text }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) { alert(data.error || 'Upload failed.'); return; }
+  refreshProjectFiles();
 });
 
 convList.addEventListener('click', async (e) => {
@@ -1279,7 +1600,26 @@ convList.addEventListener('click', async (e) => {
 const artifactPanel = document.getElementById('artifact-panel');
 const artifactPanelBody = document.getElementById('artifact-panel-body');
 const artifactPanelTitle = document.getElementById('artifact-panel-title');
+const artifactPanelTabs = document.getElementById('artifact-panel-tabs');
+const artifactPreviewFrame = document.getElementById('artifact-preview-frame');
 let currentArtifactCard = null;
+
+function buildPreviewDoc(lang, code) {
+  if (lang === 'svg') {
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+      '<style>html,body{margin:0;height:100%;display:flex;align-items:center;justify-content:center;background:#fff;}' +
+      'svg{max-width:100%;max-height:100%;}</style></head><body>' + code + '</body></html>';
+  }
+  // html - use as-is if it already looks like a full document, otherwise wrap it.
+  const looksFullDoc = /<html[\s>]/i.test(code) || /<!doctype/i.test(code);
+  return looksFullDoc ? code : ('<!doctype html><html><head><meta charset="utf-8"></head><body>' + code + '</body></html>');
+}
+
+function setArtifactTab(tab) {
+  artifactPanelTabs.querySelectorAll('.artifact-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  artifactPreviewFrame.style.display = tab === 'preview' ? 'block' : 'none';
+  artifactPanelBody.style.display = tab === 'code' ? 'block' : 'none';
+}
 
 function openArtifactFromCard(card) {
   currentArtifactCard = card;
@@ -1287,8 +1627,23 @@ function openArtifactFromCard(card) {
   const tmpl = document.querySelector('template.artifact-src[data-id="' + id + '"]');
   artifactPanelBody.innerHTML = '<div class="bubble">' + (tmpl ? tmpl.innerHTML : '<p>Not found.</p>') + '</div>';
   artifactPanelTitle.textContent = card.dataset.title;
+
+  const renderable = card.dataset.renderable === 'true';
+  if (renderable) {
+    artifactPreviewFrame.srcdoc = buildPreviewDoc(card.dataset.lang, card.dataset.code);
+    artifactPanelTabs.style.display = 'flex';
+    setArtifactTab('preview');
+  } else {
+    artifactPanelTabs.style.display = 'none';
+    setArtifactTab('code');
+  }
   artifactPanel.classList.add('open');
 }
+
+artifactPanelTabs.addEventListener('click', (e) => {
+  const btn = e.target.closest('.artifact-tab');
+  if (btn) setArtifactTab(btn.dataset.tab);
+});
 
 document.addEventListener('click', (e) => {
   const card = e.target.closest('.artifact-card');
@@ -1373,6 +1728,49 @@ clearAllBtn.addEventListener('click', async () => {
     await fetch('/conversations/clear', { method: 'POST' });
   } catch (err) { /* fall through to redirect regardless */ }
   window.location.href = '/';
+});
+
+/* ---------- Delete account ---------- */
+const deleteAccountBtn = document.getElementById('delete-account-btn');
+const deleteAccountConfirm = document.getElementById('delete-account-confirm');
+const deleteAccountPassword = document.getElementById('delete-account-password');
+const deleteAccountConfirmBtn = document.getElementById('delete-account-confirm-btn');
+const deleteAccountCancelBtn = document.getElementById('delete-account-cancel-btn');
+const deleteAccountError = document.getElementById('delete-account-error');
+
+deleteAccountBtn.addEventListener('click', () => {
+  deleteAccountBtn.style.display = 'none';
+  deleteAccountConfirm.style.display = 'block';
+  deleteAccountPassword.focus();
+});
+deleteAccountCancelBtn.addEventListener('click', () => {
+  deleteAccountConfirm.style.display = 'none';
+  deleteAccountBtn.style.display = 'block';
+  deleteAccountPassword.value = '';
+  deleteAccountError.style.display = 'none';
+});
+deleteAccountConfirmBtn.addEventListener('click', async () => {
+  deleteAccountError.style.display = 'none';
+  deleteAccountConfirmBtn.disabled = true;
+  try {
+    const resp = await fetch('/account/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: deleteAccountPassword.value }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      deleteAccountError.textContent = data.error || 'Something went wrong.';
+      deleteAccountError.style.display = 'block';
+      deleteAccountConfirmBtn.disabled = false;
+      return;
+    }
+    window.location.href = '/signup';
+  } catch (err) {
+    deleteAccountError.textContent = 'Something went wrong. Please try again.';
+    deleteAccountError.style.display = 'block';
+    deleteAccountConfirmBtn.disabled = false;
+  }
 });
 
 /* ---------- Customize modal ---------- */

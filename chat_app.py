@@ -32,19 +32,30 @@ import html as html_escape
 import json
 import os
 import re
+import secrets
+import shutil
 import sys
 import traceback
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import markdown as md
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, stream_with_context, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from pygments.formatters import HtmlFormatter
 
 import code_agent
+import mailer
 import models
 from pdf_research_agent_local import web_search
 
 app = Flask(__name__)
+
+# In-memory rate limiting (fine for this app's single-process deployment) -
+# guards the auth endpoints against brute-force/spam. Everything else is
+# unlimited by default.
+limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 BACKEND = os.environ.get("CHAT_BACKEND", "groq").strip().lower()
 
@@ -68,6 +79,62 @@ else:
     FOOTNOTE = "Messages are sent to Groq's API for a reply. Chats are saved to your account."
 
 VALID_MODELS = {m for m, _ in MODEL_CHOICES}
+
+MAX_SEARCH_SUBQUERIES = 3
+
+# Catches "..., and what/when/where/who/why/how/is/does/can ..." - the
+# common way people join two distinct questions under one final "?"
+# without a second "?" to split on (e.g. "what's today's date, and what's
+# a recent AI headline?" has exactly one "?", so naive splitting on "?"
+# treats it as a single query and only ever searches the first half).
+_COMPOUND_JOINER_RE = re.compile(
+    r",?\s+and\s+(what|when|where|who|why|how|which|is|are|does|do|can|will)\b", re.IGNORECASE
+)
+
+
+def _split_into_queries(message: str) -> list:
+    parts = [p.strip() for p in message.split("?") if p.strip()]
+    if len(parts) > 1:
+        return [p + "?" for p in parts]
+
+    m = _COMPOUND_JOINER_RE.search(message)
+    if m:
+        first = message[:m.start()].strip()
+        second = (m.group(1) + message[m.end():]).strip()
+        candidates = [q for q in (first, second) if len(q) > 3]
+        if len(candidates) > 1:
+            return candidates
+
+    return [message]
+
+
+def web_search_for_message(message: str) -> str:
+    """
+    Deterministic web search for chat grounding. A single search call
+    often misses part of a compound question - e.g. "what's today's date,
+    and what's a recent AI headline?" as one DuckDuckGo query tends to
+    return only date-related results, so the second half goes ungrounded.
+    Split into distinct questions and search each separately when there's
+    more than one; a plain single-topic message still gets a single
+    search, unchanged from before.
+    """
+    queries = _split_into_queries(message)[:MAX_SEARCH_SUBQUERIES]
+
+    if len(queries) == 1:
+        try:
+            return web_search(queries[0], max_results=5)
+        except Exception as e:
+            return f"Search failed: {e}"
+
+    blocks = []
+    for q in queries:
+        try:
+            result = web_search(q, max_results=4)
+        except Exception as e:
+            result = f"Search failed: {e}"
+        blocks.append(f'Results for "{q}":\n{result}')
+    return "\n\n".join(blocks)
+
 
 MD_EXTENSIONS = ["extra", "sane_lists", "codehilite"]
 MD_EXTENSION_CONFIGS = {"codehilite": {"guess_lang": False}}
@@ -124,17 +191,23 @@ def _extract_artifacts(markdown_text: str):
     return processed, artifacts
 
 
+# Artifacts in these languages get a live "Preview" tab (sandboxed iframe)
+# alongside the code - anything else only shows the highlighted source.
+RENDERABLE_ARTIFACT_LANGS = {"html", "svg"}
+
+
 def _artifact_card_html(art: dict) -> str:
     code_attr = html_escape.escape(art["code"], quote=True)
     title_attr = html_escape.escape(art["title"], quote=True)
     lang_attr = html_escape.escape(art["language"], quote=True)
     title_txt = html_escape.escape(art["title"])
     lang_txt = html_escape.escape(art["language"])
+    renderable = "true" if art["language"].lower() in RENDERABLE_ARTIFACT_LANGS else "false"
     highlighted = render_markdown(f"```{art['language']}\n{art['code']}\n```")
     return (
         f'<div class="artifact-card" data-id="{art["id"]}" data-title="{title_attr}" '
-        f'data-lang="{lang_attr}" data-code="{code_attr}">'
-        f'<div class="artifact-icon">&lt;/&gt;</div>'
+        f'data-lang="{lang_attr}" data-code="{code_attr}" data-renderable="{renderable}">'
+        f'<div class="artifact-icon">{"▶" if renderable == "true" else "&lt;/&gt;"}</div>'
         f'<div class="artifact-meta">'
         f'<div class="artifact-title">{title_txt}</div>'
         f'<div class="artifact-sub">{lang_txt} · {art["lines"]} lines</div>'
@@ -175,12 +248,24 @@ models.init_db(app)
 # can even reach the login page on a public deployment. Unset = no gate.
 SITE_PASSWORD = os.environ.get("SITE_PASSWORD")
 
+# Optional: require an invite code to sign up (on top of SITE_PASSWORD, if
+# also set) - stops anyone who has SITE_PASSWORD from creating their own
+# account and using Code mode's run_command on this server. Unset = signup
+# stays open to anyone who reaches it, same as before.
+SIGNUP_INVITE_CODE = os.environ.get("SIGNUP_INVITE_CODE")
+
 # Where the "Analyser" link in the sidebar points - the other app (app.py),
 # which normally runs on port 5000. Override with ANALYSER_URL if you run
 # it elsewhere.
 ANALYSER_URL = os.environ.get("ANALYSER_URL", "http://127.0.0.1:5000/")
 
-PUBLIC_ENDPOINTS = {"login", "signup", "static"}
+# Optional: comma-separated emails allowed to see /admin (usage counts,
+# recent signups). Unset = nobody can - the route 404s for everyone,
+# admin link never shows, rather than defaulting to "whoever signed up
+# first" (which could easily be wrong on an already-populated database).
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+PUBLIC_ENDPOINTS = {"login", "signup", "static", "forgot_password", "reset_password"}
 
 
 @app.before_request
@@ -243,20 +328,25 @@ def _valid_email(email: str) -> bool:
 
 
 @app.route("/signup", methods=["GET", "POST"])
+@limiter.limit("8 per hour", methods=["POST"])
 def signup():
     if request.method == "GET":
-        return render_template("signup.html", error=None)
+        return render_template("signup.html", error=None, invite_required=bool(SIGNUP_INVITE_CODE))
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
     confirm = request.form.get("confirm") or ""
+    invite_code = request.form.get("invite_code") or ""
+    invite_required = bool(SIGNUP_INVITE_CODE)
+    if invite_required and invite_code != SIGNUP_INVITE_CODE:
+        return render_template("signup.html", error="Incorrect invite code.", email=email, invite_required=True)
     if not _valid_email(email):
-        return render_template("signup.html", error="Enter a valid email address.", email=email)
+        return render_template("signup.html", error="Enter a valid email address.", email=email, invite_required=invite_required)
     if len(password) < 8:
-        return render_template("signup.html", error="Password must be at least 8 characters.", email=email)
+        return render_template("signup.html", error="Password must be at least 8 characters.", email=email, invite_required=invite_required)
     if password != confirm:
-        return render_template("signup.html", error="Passwords don't match.", email=email)
+        return render_template("signup.html", error="Passwords don't match.", email=email, invite_required=invite_required)
     if models.User.query.filter_by(email=email).first():
-        return render_template("signup.html", error="An account with that email already exists.", email=email)
+        return render_template("signup.html", error="An account with that email already exists.", email=email, invite_required=invite_required)
 
     user = models.User(email=email)
     user.set_password(password)
@@ -267,6 +357,7 @@ def signup():
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute; 30 per hour", methods=["POST"])
 def login():
     if request.method == "GET":
         return render_template("login.html", error=None)
@@ -283,6 +374,68 @@ def login():
 @app.route("/logout", methods=["POST"])
 def logout():
     session.pop("user_id", None)
+    return redirect(url_for("login"))
+
+
+RESET_TOKEN_LIFETIME = timedelta(hours=1)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per hour", methods=["POST"])
+def forgot_password():
+    if request.method == "GET":
+        return render_template("forgot_password.html", error=None, sent=False, mail_configured=mailer.is_configured())
+
+    if not mailer.is_configured():
+        return render_template(
+            "forgot_password.html", sent=False, mail_configured=False,
+            error="Password reset email isn't set up on this deployment yet - ask whoever runs it to configure SMTP_HOST/SMTP_USER/SMTP_PASSWORD.",
+        )
+
+    email = (request.form.get("email") or "").strip().lower()
+    user = models.User.query.filter_by(email=email).first()
+    # Always show the same "sent" response whether or not the account exists,
+    # so this can't be used to find out which emails have accounts here.
+    if user:
+        user.reset_token = secrets.token_urlsafe(32)
+        user.reset_token_expires = datetime.now(timezone.utc) + RESET_TOKEN_LIFETIME
+        models.db.session.commit()
+        reset_url = url_for("reset_password", token=user.reset_token, _external=True)
+        try:
+            mailer.send_password_reset_email(user.email, reset_url)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            # Don't leak send failures to the client - same generic message either way.
+    return render_template("forgot_password.html", error=None, sent=True, mail_configured=True)
+
+
+@app.route("/reset-password", methods=["GET", "POST"])
+@limiter.limit("20 per hour", methods=["POST"])
+def reset_password():
+    token = request.values.get("token", "")
+    user = models.User.query.filter_by(reset_token=token).first() if token else None
+    valid = bool(
+        user and user.reset_token_expires
+        and user.reset_token_expires.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
+    )
+
+    if request.method == "GET":
+        return render_template("reset_password.html", token=token, valid=valid, error=None)
+
+    if not valid:
+        return render_template("reset_password.html", token=token, valid=False, error=None)
+
+    password = request.form.get("password") or ""
+    confirm = request.form.get("confirm") or ""
+    if len(password) < 8:
+        return render_template("reset_password.html", token=token, valid=True, error="Password must be at least 8 characters.")
+    if password != confirm:
+        return render_template("reset_password.html", token=token, valid=True, error="Passwords don't match.")
+
+    user.set_password(password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    models.db.session.commit()
     return redirect(url_for("login"))
 
 
@@ -321,13 +474,16 @@ def chat_home():
     conv = models.Conversation.query.filter_by(id=conv_id, user_id=user.id, mode="chat").first() if conv_id else None
 
     if conv:
+        msgs = _ordered_messages(conv.id)
         history = [
             {
+                "id": m.id,
                 "role": m.role,
                 "html": render_message(m.content) if m.role == "assistant" else None,
                 "text": m.content,
+                "is_last": i == len(msgs) - 1,
             }
-            for m in conv.messages
+            for i, m in enumerate(msgs)
         ]
     else:
         conv_id = None
@@ -348,6 +504,7 @@ def chat_home():
         landing_subtitle=LANDING_SUBTITLE,
         footnote=FOOTNOTE,
         user_email=user.email,
+        show_admin_link=is_admin(user),
     )
 
 
@@ -372,28 +529,48 @@ def chat_send():
         models.db.session.add(conv)
         models.db.session.commit()
 
-    models.db.session.add(models.Message(conversation_id=conv.id, role="user", content=message))
+    user_msg = models.Message(conversation_id=conv.id, role="user", content=message)
+    models.db.session.add(user_msg)
     models.db.session.commit()
+    user_message_id = user_msg.id
     history = [{"role": m.role, "content": m.content} for m in conv.messages]
     conv_id, conv_title = conv.id, conv.title
 
-    # Web search grounding, if the user toggled it on: deterministically search
-    # (not left up to the model to decide - see pdf_research_agent_local.py for
-    # why) and fold the results into the API call only. The clean original
+    # Extra context folded into the API call only - the clean original
     # message is what's actually stored in the DB above.
+    extra_blocks = []
+
+    # Web search grounding, if the user toggled it on: deterministically search
+    # (not left up to the model to decide - see pdf_research_agent_local.py for why).
     if data.get("web_search"):
-        try:
-            results = web_search(message, max_results=5)
-        except Exception:
-            results = "Search failed."
-        history[-1] = {
-            "role": "user",
-            "content": f"{message}\n\n[Web search results for grounding - cite the URLs you actually use, don't invent any]:\n{results}",
-        }
+        results = web_search_for_message(message)
+        extra_blocks.append((
+            "Web search results for grounding - answer EVERY part of the question "
+            "above using the relevant results below; if a part genuinely isn't "
+            "covered by any result, say so explicitly rather than skipping it. "
+            "Cite the URLs you actually use, don't invent any",
+            results,
+        ))
+
+    # This chat's project (if any) may have reference files attached - fold
+    # them in on every turn so they're not lost to history trimming.
+    knowledge = _project_knowledge_block(conv.project_id)
+    if knowledge:
+        extra_blocks.append((
+            "Reference material attached to this project - use it where relevant",
+            knowledge,
+        ))
+
+    if extra_blocks:
+        content = message
+        for label, block in extra_blocks:
+            content += f"\n\n[{label}]:\n{block}"
+        history[-1] = {"role": "user", "content": content}
 
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
+        yield f"data: {json.dumps({'user_message_id': user_message_id})}\n\n"
         chunks = []
         try:
             for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
@@ -407,6 +584,121 @@ def chat_send():
             if is_new:
                 _delete_conversations([conv_id])
             models.db.session.commit()
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+        full_reply = "".join(chunks).strip()
+        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=full_reply))
+        models.db.session.commit()
+        html_out = render_message(full_reply)
+        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
+def _ordered_messages(conv_id):
+    return models.Message.query.filter_by(conversation_id=conv_id).order_by(models.Message.id).all()
+
+
+@app.route("/conv/<int:conv_id>/regenerate", methods=["POST"])
+def chat_regenerate(conv_id):
+    conv = models.Conversation.query.filter_by(id=conv_id, user_id=g.user.id, mode="chat").first()
+    if not conv:
+        return jsonify({"error": "Not found"}), 404
+    msgs = _ordered_messages(conv_id)
+    if not msgs or msgs[-1].role != "assistant":
+        return jsonify({"error": "Nothing to regenerate."}), 400
+
+    data = request.get_json(silent=True) or {}
+    model = pick_model(data)
+    custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
+    old_assistant_id = msgs[-1].id
+    history = [{"role": m.role, "content": m.content} for m in msgs[:-1]]
+
+    def generate():
+        chunks = []
+        try:
+            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
+                chunks.append(delta)
+                yield f"data: {json.dumps({'delta': delta})}\n\n"
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+        # Only replace the old reply once the new one actually succeeded -
+        # a failed regenerate should never leave the user with nothing.
+        full_reply = "".join(chunks).strip()
+        old = models.Message.query.get(old_assistant_id)
+        if old:
+            models.db.session.delete(old)
+        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=full_reply))
+        models.db.session.commit()
+        html_out = render_message(full_reply)
+        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
+@app.route("/conv/<int:conv_id>/edit", methods=["POST"])
+def chat_edit(conv_id):
+    conv = models.Conversation.query.filter_by(id=conv_id, user_id=g.user.id, mode="chat").first()
+    if not conv:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(silent=True) or {}
+    new_text = (data.get("message") or "").strip()
+    if not new_text:
+        return jsonify({"error": "Please type a message."}), 400
+    if len(new_text) > 8000:
+        return jsonify({"error": "That message is too long (max 8000 characters)."}), 400
+
+    target = models.Message.query.filter_by(id=data.get("message_id"), conversation_id=conv_id, role="user").first()
+    if not target:
+        return jsonify({"error": "Message not found."}), 404
+
+    model = pick_model(data)
+    custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
+
+    # Editing a past message discards it and everything after it (this
+    # branch of the conversation), then continues from the edited version -
+    # same as real Claude/ChatGPT's "edit and resend" behavior.
+    for m in models.Message.query.filter(
+        models.Message.conversation_id == conv_id, models.Message.id >= target.id
+    ).all():
+        models.db.session.delete(m)
+    models.db.session.add(models.Message(conversation_id=conv_id, role="user", content=new_text))
+    models.db.session.commit()
+
+    history = [{"role": m.role, "content": m.content} for m in _ordered_messages(conv_id)]
+    extra_blocks = []
+    if data.get("web_search"):
+        results = web_search_for_message(new_text)
+        extra_blocks.append((
+            "Web search results for grounding - answer EVERY part of the question "
+            "above using the relevant results below; if a part genuinely isn't "
+            "covered by any result, say so explicitly rather than skipping it. "
+            "Cite the URLs you actually use, don't invent any",
+            results,
+        ))
+    knowledge = _project_knowledge_block(conv.project_id)
+    if knowledge:
+        extra_blocks.append((
+            "Reference material attached to this project - use it where relevant",
+            knowledge,
+        ))
+    if extra_blocks:
+        content = new_text
+        for label, block in extra_blocks:
+            content += f"\n\n[{label}]:\n{block}"
+        history[-1] = {"role": "user", "content": content}
+
+    def generate():
+        yield f"data: {json.dumps({'truncated': True})}\n\n"
+        chunks = []
+        try:
+            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
+                chunks.append(delta)
+                yield f"data: {json.dumps({'delta': delta})}\n\n"
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
         full_reply = "".join(chunks).strip()
@@ -487,12 +779,89 @@ def project_delete(project_id):
     return jsonify({"ok": True})
 
 
+MAX_PROJECT_FILES = 10
+MAX_PROJECT_FILE_CHARS = 40_000
+
+
+@app.route("/projects/<int:project_id>/files", methods=["GET", "POST"])
+def project_files(project_id):
+    proj = models.Project.query.filter_by(id=project_id, user_id=g.user.id).first()
+    if not proj:
+        return jsonify({"error": "Not found"}), 404
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "files": [{"id": f.id, "filename": f.filename, "chars": len(f.content)} for f in proj.files],
+        })
+
+    if len(proj.files) >= MAX_PROJECT_FILES:
+        return jsonify({"error": f"This project already has the max of {MAX_PROJECT_FILES} files."}), 400
+    data = request.get_json(silent=True) or {}
+    filename = (data.get("filename") or "untitled.txt").strip()[:255]
+    content = (data.get("content") or "")[:MAX_PROJECT_FILE_CHARS]
+    if not content.strip():
+        return jsonify({"error": "That file looks empty."}), 400
+
+    pf = models.ProjectFile(project_id=proj.id, filename=filename, content=content)
+    models.db.session.add(pf)
+    models.db.session.commit()
+    return jsonify({"ok": True, "id": pf.id, "filename": pf.filename, "chars": len(pf.content)})
+
+
+@app.route("/projects/<int:project_id>/files/<int:file_id>/delete", methods=["POST"])
+def project_file_delete(project_id, file_id):
+    proj = models.Project.query.filter_by(id=project_id, user_id=g.user.id).first()
+    if not proj:
+        return jsonify({"error": "Not found"}), 404
+    pf = models.ProjectFile.query.filter_by(id=file_id, project_id=proj.id).first()
+    if pf:
+        models.db.session.delete(pf)
+        models.db.session.commit()
+    return jsonify({"ok": True})
+
+
+def _project_knowledge_block(project_id) -> str:
+    """Every file attached to this project, concatenated for context - not
+    real RAG/embeddings, just prepended text (fine at this small scale)."""
+    if not project_id:
+        return ""
+    files = models.ProjectFile.query.filter_by(project_id=project_id).order_by(models.ProjectFile.id).all()
+    if not files:
+        return ""
+    return "\n\n".join(f"--- {f.filename} ---\n{f.content}" for f in files)
+
+
 @app.route("/conversations/clear", methods=["POST"])
 def clear_all():
     conv_ids = [c.id for c in models.Conversation.query.filter_by(user_id=g.user.id).all()]
     _delete_conversations(conv_ids)
     models.Project.query.filter_by(user_id=g.user.id).delete()
     models.db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/account/delete", methods=["POST"])
+@limiter.limit("5 per hour")
+def account_delete():
+    user = g.user
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+    if not user.check_password(password):
+        return jsonify({"error": "Incorrect password."}), 400
+
+    conv_ids = [c.id for c in models.Conversation.query.filter_by(user_id=user.id).all()]
+    _delete_conversations(conv_ids)
+    models.Project.query.filter_by(user_id=user.id).delete()
+
+    try:
+        shutil.rmtree(code_agent.user_workspace(user.id), ignore_errors=True)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+
+    models.db.session.delete(user)
+    models.db.session.commit()
+    session.pop("user_id", None)
     return jsonify({"ok": True})
 
 
@@ -521,6 +890,57 @@ def artifacts_gallery():
         pygments_css=PYGMENTS_CSS,
         header_badge=HEADER_BADGE,
         user_email=user.email,
+    )
+
+
+def is_admin(user) -> bool:
+    return bool(ADMIN_EMAILS) and user.email.lower() in ADMIN_EMAILS
+
+
+@app.route("/admin", methods=["GET"])
+def admin_dashboard():
+    user = g.user
+    if not is_admin(user):
+        return jsonify({"error": "Not found"}), 404
+
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    total_users = models.User.query.count()
+    total_conversations = models.Conversation.query.count()
+    total_chat_convs = models.Conversation.query.filter_by(mode="chat").count()
+    total_code_convs = models.Conversation.query.filter_by(mode="code").count()
+    total_messages = models.Message.query.count()
+    total_projects = models.Project.query.count()
+    signups_7d = models.User.query.filter(models.User.created_at >= week_ago).count()
+
+    recent_users = models.User.query.order_by(models.User.id.desc()).limit(15).all()
+    # Per-user activity, cheapest as one query rather than N+1 inside the template.
+    conv_counts = dict(
+        models.db.session.query(models.Conversation.user_id, models.db.func.count(models.Conversation.id))
+        .group_by(models.Conversation.user_id).all()
+    )
+    recent_rows = [
+        {"email": u.email, "created_at": u.created_at, "conversations": conv_counts.get(u.id, 0)}
+        for u in recent_users
+    ]
+
+    return render_template(
+        "admin.html",
+        user_email=user.email,
+        analyser_url=ANALYSER_URL,
+        header_badge=HEADER_BADGE,
+        stats={
+            "total_users": total_users,
+            "total_conversations": total_conversations,
+            "total_chat_convs": total_chat_convs,
+            "total_code_convs": total_code_convs,
+            "total_messages": total_messages,
+            "total_projects": total_projects,
+            "signups_7d": signups_7d,
+        },
+        recent_users=recent_rows,
+        is_admin_view=True,
     )
 
 
@@ -570,8 +990,8 @@ def _api_messages_for(conv_id) -> list:
     return out
 
 
-def _run_code_loop(conv_id: int, model: str):
-    system = code_agent.SYSTEM_PROMPT_TEMPLATE.format(workspace=code_agent.WORKSPACE_ROOT)
+def _run_code_loop(conv_id: int, model: str, workspace_root):
+    system = code_agent.SYSTEM_PROMPT_TEMPLATE.format(workspace=workspace_root)
 
     for _ in range(code_agent.MAX_TOOL_STEPS):
         full_messages = [{"role": "system", "content": system}] + _api_messages_for(conv_id)
@@ -588,7 +1008,7 @@ def _run_code_loop(conv_id: int, model: str):
 
             if name in code_agent.READ_ONLY_TOOLS:
                 try:
-                    result = code_agent.execute_tool(name, args)
+                    result = code_agent.execute_tool(name, args, workspace_root)
                 except Exception as e:
                     result = f"Error: {e}"
                 _add_tool_call_message(conv_id, call_id, name, args)
@@ -598,7 +1018,7 @@ def _run_code_loop(conv_id: int, model: str):
 
             if name in code_agent.APPROVAL_TOOLS:
                 try:
-                    description = code_agent.describe_pending(name, args)
+                    description = code_agent.describe_pending(name, args, workspace_root)
                 except Exception as e:
                     description = {"kind": name, "error": str(e)}
                 _add_tool_call_message(conv_id, call_id, name, args)
@@ -649,10 +1069,12 @@ def code_home():
     conv_id = request.args.get("c", type=int)
     conv = models.Conversation.query.filter_by(id=conv_id, user_id=user.id, mode="code").first() if conv_id else None
 
+    workspace_root = code_agent.user_workspace(user.id)
+
     if conv:
         transcript = _render_code_transcript(conv)
         pending = _pending(conv)
-        pending_desc = code_agent.describe_pending(pending["name"], pending["arguments"]) if pending else None
+        pending_desc = code_agent.describe_pending(pending["name"], pending["arguments"], workspace_root) if pending else None
     else:
         conv_id = None
         transcript = []
@@ -669,7 +1091,7 @@ def code_home():
         pinned=sidebar["pinned"],
         projects=sidebar["projects"],
         ungrouped=sidebar["ungrouped"],
-        workspace=str(code_agent.WORKSPACE_ROOT),
+        workspace=str(workspace_root),
         analyser_url=ANALYSER_URL,
         pygments_css=PYGMENTS_CSS,
         header_badge=HEADER_BADGE,
@@ -701,11 +1123,12 @@ def code_send():
     models.db.session.add(models.Message(conversation_id=conv.id, role="user", content=message))
     models.db.session.commit()
     conv_id, conv_title = conv.id, conv.title
+    workspace_root = code_agent.user_workspace(user.id)
 
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
-        yield from _run_code_loop(conv_id, model)
+        yield from _run_code_loop(conv_id, model, workspace_root)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -719,8 +1142,9 @@ def code_approve():
     pending = _pending(conv)
     if not pending:
         return jsonify({"error": "Nothing pending."}), 400
+    workspace_root = code_agent.user_workspace(g.user.id)
     try:
-        result = code_agent.execute_pending(pending["name"], pending["arguments"])
+        result = code_agent.execute_pending(pending["name"], pending["arguments"], workspace_root)
     except Exception as e:
         traceback.print_exc(file=sys.stderr)
         result = f"Error: {e}"
@@ -731,7 +1155,7 @@ def code_approve():
 
     def generate():
         yield f"data: {json.dumps({'executed': result[:1200]})}\n\n"
-        yield from _run_code_loop(conv_id, model)
+        yield from _run_code_loop(conv_id, model, workspace_root)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -752,7 +1176,8 @@ def code_deny():
     _save_pending(conv, None)
     conv_id = conv.id
     model = pick_model(data)
-    return Response(stream_with_context(_run_code_loop(conv_id, model)), mimetype="text/event-stream")
+    workspace_root = code_agent.user_workspace(g.user.id)
+    return Response(stream_with_context(_run_code_loop(conv_id, model, workspace_root)), mimetype="text/event-stream")
 
 
 if __name__ == "__main__":

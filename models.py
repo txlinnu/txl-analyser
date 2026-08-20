@@ -47,6 +47,8 @@ def _migrate(engine):
         "ALTER TABLE messages ADD COLUMN tool_calls_json TEXT",
         "ALTER TABLE messages ADD COLUMN tool_call_id VARCHAR(64)",
         "ALTER TABLE messages ADD COLUMN tool_name VARCHAR(64)",
+        "ALTER TABLE users ADD COLUMN reset_token VARCHAR(64)",
+        "ALTER TABLE users ADD COLUMN reset_token_expires DATETIME",
     ]
     for stmt in statements:
         try:
@@ -66,6 +68,9 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=_utcnow)
+    # Forgot-password flow (see chat_app.py's /forgot-password, /reset-password):
+    reset_token = db.Column(db.String(64), nullable=True)
+    reset_token_expires = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password: str):
         self.password_hash = generate_password_hash(password)
@@ -79,6 +84,20 @@ class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    files = db.relationship("ProjectFile", backref="project", cascade="all, delete-orphan", order_by="ProjectFile.id")
+
+
+class ProjectFile(db.Model):
+    """A reference file attached to a Project - its content is folded into
+    the context of every chat inside that project (see chat_app.py's
+    _project_knowledge_block()). Not real RAG/embeddings - just prepended
+    text, which is fine at the small scale (a few KB) this is meant for."""
+    __tablename__ = "project_files"
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=_utcnow)
 
 
