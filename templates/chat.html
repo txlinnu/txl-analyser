@@ -920,6 +920,7 @@
       </div>
       <div class="composer-toolbar">
         <button class="toggle-pill" id="websearch-toggle" type="button" title="Ground replies in real web search results">🌐 Web search</button>
+        <button class="toggle-pill" id="deepcheck-toggle" type="button" title="Draft, verify, get a second model's opinion, then give one reconciled answer - slower, more careful">🔎 Deep check</button>
       </div>
       <div class="suggestions">
         <button class="chip" type="button">Explain a concept simply</button>
@@ -1043,6 +1044,7 @@ const attachBtn = document.getElementById('attach-btn');
 const fileInput = document.getElementById('file-input');
 const micBtn = document.getElementById('mic-btn');
 const websearchToggle = document.getElementById('websearch-toggle');
+const deepcheckToggle = document.getElementById('deepcheck-toggle');
 let pendingAttachment = null;
 const ungroupedList = document.getElementById('ungrouped-list');
 const PROJECTS = {{ projects | tojson }};
@@ -1211,6 +1213,7 @@ async function sendMessage(text) {
         message: text, model: modelSelect.value, conv_id: currentConvId,
         custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
         web_search: websearchToggle.classList.contains('active'),
+        deep_check: deepcheckToggle.classList.contains('active'),
         image: imageToSend || undefined,
       }),
     });
@@ -1325,6 +1328,7 @@ function startEditMessage(msgDiv) {
           model: modelSelect.value,
           custom_instructions: localStorage.getItem('txlcloud-custom-instructions') || '',
           web_search: websearchToggle.classList.contains('active'),
+          deep_check: deepcheckToggle.classList.contains('active'),
         }),
       });
       await consumeSSE(resp, (payload) => {
@@ -1868,6 +1872,13 @@ if (localStorage.getItem('txlcloud-websearch') === '1') {
 websearchToggle.addEventListener('click', () => {
   const nowActive = websearchToggle.classList.toggle('active');
   localStorage.setItem('txlcloud-websearch', nowActive ? '1' : '0');
+});
+
+/* ---------- Deep check toggle ---------- */
+/* Not persisted like web search - it costs 2-3x the normal API calls per
+   message, so it resets off on reload rather than silently staying on. */
+deepcheckToggle.addEventListener('click', () => {
+  deepcheckToggle.classList.toggle('active');
 });
 
 /* ---------- Attach a text/code file ---------- */

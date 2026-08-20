@@ -14,3 +14,4 @@ google-genai>=1.0.0     # Gemini fallback for txl_cloud.py - only used if GEMINI
 psycopg2-binary>=2.9.0   # Postgres driver for chat_app.py accounts (e.g. Neon) - not needed for local SQLite dev
 youtube-transcript-api>=1.0.0
 gunicorn>=22.0.0
+scikit-learn>=1.5.0     # TF-IDF retrieval for Project knowledge (project_rag.py) - no GPU/embeddings model needed

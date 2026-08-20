@@ -28,8 +28,10 @@ Run:
 (PowerShell: $env:CHAT_BACKEND='ollama'; $env:CHAT_PORT='5002'; python chat_app.py)
 """
 
+import ast
 import html as html_escape
 import json
+import operator
 import os
 import re
 import secrets
@@ -49,6 +51,8 @@ from pygments.formatters import HtmlFormatter
 import code_agent
 import mailer
 import models
+import project_rag
+import txl_gemini
 from pdf_research_agent_local import web_search
 
 app = Flask(__name__)
@@ -62,24 +66,169 @@ BACKEND = os.environ.get("CHAT_BACKEND", "groq").strip().lower()
 
 if BACKEND == "ollama":
     import txl_cloud_local as agent
+    FAST_MODEL = "qwen2.5:7b"
+    ACCURATE_MODEL = "qwen2.5:14b"
     MODEL_CHOICES = [
-        ("qwen2.5:7b", "Balanced — quicker, still solid"),
-        ("qwen2.5:14b", "Accurate — bigger, slower"),
+        ("auto", "Auto — picks the right model per message"),
+        (FAST_MODEL, "Balanced — quicker, still solid"),
+        (ACCURATE_MODEL, "Accurate — bigger, slower"),
     ]
     HEADER_BADGE = "🔒 Local · Unlimited"
     LANDING_SUBTITLE = "Runs 100% on this machine via Ollama — no daily limit, nothing ever sent anywhere."
     FOOTNOTE = "Runs entirely locally via Ollama — no data ever leaves this machine, no usage limit."
 else:
     import txl_cloud as agent
+    ACCURATE_MODEL = "openai/gpt-oss-120b"
+    FAST_MODEL = "openai/gpt-oss-20b"
     MODEL_CHOICES = [
-        ("openai/gpt-oss-120b", "Balanced — more accurate, slower"),
-        ("openai/gpt-oss-20b", "Fast — quicker, less detailed"),
+        ("auto", "Auto — picks the right model per message"),
+        (ACCURATE_MODEL, "Balanced — more accurate, slower"),
+        (FAST_MODEL, "Fast — quicker, less detailed"),
     ]
     HEADER_BADGE = "Free · Groq-powered"
     LANDING_SUBTITLE = "Free, powered by Groq's open models."
     FOOTNOTE = "Messages are sent to Groq's API for a reply. Chats are saved to your account."
 
 VALID_MODELS = {m for m, _ in MODEL_CHOICES}
+_CODE_HINT_RE = re.compile(
+    r"```|\bdef \b|\bfunction\b|\bclass \b|\bimport \b|SELECT .* FROM|\berror\b|\btraceback\b|\bdebug\b|\bfix\b",
+    re.IGNORECASE,
+)
+
+
+def route_model(message: str) -> str:
+    """Heuristic router for the 'Auto' model choice: short, simple-looking
+    questions go to the fast model; anything long, multi-part, or
+    code/debugging-shaped goes to the bigger/more accurate one. Pure text
+    heuristics - no extra API call, so it adds no latency of its own."""
+    text = message or ""
+    looks_complex = (
+        len(text.split()) > 40
+        or text.count("?") > 1
+        or bool(_CODE_HINT_RE.search(text))
+        or bool(_COMPOUND_JOINER_RE.search(text))  # "X, and also Y" - a compound ask even with one "?"
+    )
+    return ACCURATE_MODEL if looks_complex else FAST_MODEL
+
+
+# --- "Deep check" mode: self-critique + a second model's opinion + ---------
+# automated arithmetic verification, reconciled into one final answer.
+# Opt-in (the "Deep check" composer toggle) since it costs 2-3x the normal
+# latency/API calls - see chat.html's deep-check-toggle.
+
+_SAFE_BINOPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_SAFE_UNARYOPS = {ast.USub: operator.neg, ast.UAdd: operator.pos}
+
+
+def _safe_eval(node):
+    if isinstance(node, ast.Expression):
+        return _safe_eval(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BINOPS:
+        return _SAFE_BINOPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARYOPS:
+        return _SAFE_UNARYOPS[type(node.op)](_safe_eval(node.operand))
+    raise ValueError("unsupported expression")
+
+
+def safe_calculate(expr: str) -> float:
+    """Evaluates a plain arithmetic expression safely - only numbers, +-*/,
+    //, %, **, and parentheses. No names, calls, or attribute access, so
+    this can't be used to execute arbitrary code."""
+    return _safe_eval(ast.parse(expr, mode="eval"))
+
+
+_MATH_CLAIM_RE = re.compile(r"([0-9][0-9\s+\-*/().]*[0-9)])\s*=\s*(-?[0-9]+(?:\.[0-9]+)?)\b")
+
+
+def verify_math_claims(text: str) -> list:
+    """Scans a draft answer for 'expr = number' claims and flags any where
+    the stated result doesn't match what the expression actually computes -
+    catches arithmetic slips a model made confidently but wrong."""
+    notes = []
+    for expr_str, claimed_str in _MATH_CLAIM_RE.findall(text):
+        if not re.search(r"[+\-*/]", expr_str):
+            continue  # a bare number, not actually an expression
+        try:
+            actual = safe_calculate(expr_str)
+            claimed = float(claimed_str)
+        except Exception:
+            continue
+        if abs(actual - claimed) > max(1e-6, abs(actual) * 1e-9):
+            notes.append(f"{expr_str.strip()} actually equals {actual:g}, not {claimed_str} as stated.")
+    return notes
+
+
+def _get_second_opinion(history, primary_model, custom_instructions) -> str:
+    """An independent model's answer to the same question, for Deep check's
+    consensus step. Prefers genuine model diversity (Gemini on the Groq
+    backend) over just a different size of the same model family."""
+    if BACKEND == "ollama":
+        alt_model = ACCURATE_MODEL if primary_model == FAST_MODEL else FAST_MODEL
+        return "".join(agent.stream_reply(history, alt_model, custom_instructions=custom_instructions))
+    if txl_gemini.is_configured():
+        system_prompt = agent.SYSTEM_PROMPT
+        if custom_instructions:
+            system_prompt += (
+                "\n\nThe user has also given you these standing preferences for how "
+                "they'd like you to behave - follow them unless they conflict with "
+                f"being safe or honest:\n{custom_instructions}"
+            )
+        return "".join(txl_gemini.stream_reply(agent.trim_history(history), system_prompt))
+    alt_model = FAST_MODEL if primary_model == ACCURATE_MODEL else ACCURATE_MODEL
+    return "".join(agent.stream_reply(history, alt_model, custom_instructions=custom_instructions))
+
+
+def deep_check_reply(history, model, custom_instructions=None, image_data_url=None):
+    """
+    Draft -> verify any arithmetic -> get a second, independent model's
+    opinion -> have the primary model reconcile everything into one final
+    answer. Same yield shape as agent.stream_reply (text chunks) so it's a
+    drop-in replacement at the call site.
+    """
+    draft = "".join(agent.stream_reply(
+        history, model, custom_instructions=custom_instructions, image_data_url=image_data_url,
+    )).strip()
+
+    math_notes = verify_math_claims(draft)
+
+    second_opinion = ""
+    if not image_data_url:  # no second vision-capable model on either backend
+        try:
+            second_opinion = _get_second_opinion(history, model, custom_instructions)
+        except Exception as e:
+            print(f"[deep_check] second opinion failed: {e}", file=sys.stderr)
+
+    parts = []
+    if second_opinion:
+        parts.append(f"An independent second model's answer to the same question:\n{second_opinion}")
+    if math_notes:
+        parts.append("Automated arithmetic check found possible issues:\n" + "\n".join(math_notes))
+    review_note = (
+        "\n\n".join(parts) + "\n\nReview your draft against the above and correct anything wrong."
+        if parts else
+        "Double-check your draft above for accuracy and completeness before finalizing."
+    )
+
+    last = history[-1]
+    review_history = history[:-1] + [{
+        "role": "user",
+        "content": (
+            last["content"]
+            + f"\n\n[Internal review - your own draft answer was:]\n{draft}\n\n{review_note}\n\n"
+            "(Give ONE final, clean answer. Don't mention this review process, the draft, "
+            "or any other model to the user.)"
+        ),
+    }]
+    yield from agent.stream_reply(
+        review_history, model, custom_instructions=custom_instructions, image_data_url=image_data_url,
+    )
+
 
 MAX_SEARCH_SUBQUERIES = 3
 
@@ -305,9 +454,13 @@ def require_login():
     return None
 
 
-def pick_model(data) -> str:
+def pick_model(data, message: str = "") -> str:
     model = data.get("model", "")
-    return model if model in VALID_MODELS else agent.DEFAULT_MODEL
+    if model not in VALID_MODELS:
+        return agent.DEFAULT_MODEL
+    if model == "auto":
+        return route_model(message)
+    return model
 
 
 _IMAGE_DATA_URL_RE = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/]+=*$")
@@ -556,7 +709,7 @@ def chat_send():
     except InvalidImage as e:
         return jsonify({"error": str(e)}), 400
 
-    model = pick_model(data)
+    model = pick_model(data, message)
     custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
 
     conv_id = data.get("conv_id")
@@ -592,7 +745,7 @@ def chat_send():
 
     # This chat's project (if any) may have reference files attached - fold
     # them in on every turn so they're not lost to history trimming.
-    knowledge = _project_knowledge_block(conv.project_id)
+    knowledge = _project_knowledge_block(conv.project_id, message)
     if knowledge:
         extra_blocks.append((
             "Reference material attached to this project - use it where relevant",
@@ -605,13 +758,15 @@ def chat_send():
             content += f"\n\n[{label}]:\n{block}"
         history[-1] = {"role": "user", "content": content}
 
+    reply_fn = deep_check_reply if data.get("deep_check") else agent.stream_reply
+
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
         yield f"data: {json.dumps({'user_message_id': user_message_id})}\n\n"
         chunks = []
         try:
-            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
+            for delta in reply_fn(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
                 chunks.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
         except Exception as e:
@@ -647,7 +802,8 @@ def chat_regenerate(conv_id):
         return jsonify({"error": "Nothing to regenerate."}), 400
 
     data = request.get_json(silent=True) or {}
-    model = pick_model(data)
+    last_user_text = msgs[-2].content if len(msgs) >= 2 and msgs[-2].role == "user" else ""
+    model = pick_model(data, last_user_text)
     custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
     old_assistant_id = msgs[-1].id
     history = [{"role": m.role, "content": m.content} for m in msgs[:-1]]
@@ -693,7 +849,7 @@ def chat_edit(conv_id):
     if not target:
         return jsonify({"error": "Message not found."}), 404
 
-    model = pick_model(data)
+    model = pick_model(data, new_text)
     custom_instructions = (data.get("custom_instructions") or "").strip()[:4000] or None
 
     # Editing a past message discards it and everything after it (this
@@ -717,7 +873,7 @@ def chat_edit(conv_id):
             "Cite the URLs you actually use, don't invent any",
             results,
         ))
-    knowledge = _project_knowledge_block(conv.project_id)
+    knowledge = _project_knowledge_block(conv.project_id, new_text)
     if knowledge:
         extra_blocks.append((
             "Reference material attached to this project - use it where relevant",
@@ -729,11 +885,13 @@ def chat_edit(conv_id):
             content += f"\n\n[{label}]:\n{block}"
         history[-1] = {"role": "user", "content": content}
 
+    reply_fn = deep_check_reply if data.get("deep_check") else agent.stream_reply
+
     def generate():
         yield f"data: {json.dumps({'truncated': True})}\n\n"
         chunks = []
         try:
-            for delta in agent.stream_reply(history, model, custom_instructions=custom_instructions):
+            for delta in reply_fn(history, model, custom_instructions=custom_instructions):
                 chunks.append(delta)
                 yield f"data: {json.dumps({'delta': delta})}\n\n"
         except Exception as e:
@@ -860,15 +1018,17 @@ def project_file_delete(project_id, file_id):
     return jsonify({"ok": True})
 
 
-def _project_knowledge_block(project_id) -> str:
-    """Every file attached to this project, concatenated for context - not
-    real RAG/embeddings, just prepended text (fine at this small scale)."""
+def _project_knowledge_block(project_id, query: str) -> str:
+    """Retrieves the project's attached files, most-relevant-to-`query`
+    chunks only (see project_rag.py) - falls back to including everything
+    unchanged when the whole knowledge base is small enough that
+    retrieval wouldn't change anything anyway."""
     if not project_id:
         return ""
     files = models.ProjectFile.query.filter_by(project_id=project_id).order_by(models.ProjectFile.id).all()
     if not files:
         return ""
-    return "\n\n".join(f"--- {f.filename} ---\n{f.content}" for f in files)
+    return project_rag.retrieve(query, [{"filename": f.filename, "content": f.content} for f in files])
 
 
 @app.route("/conversations/clear", methods=["POST"])
@@ -1148,7 +1308,7 @@ def code_send():
     if len(message) > 8000:
         return jsonify({"error": "That message is too long (max 8000 characters)."}), 400
 
-    model = pick_model(data)
+    model = pick_model(data, message)
     conv_id = data.get("conv_id")
     conv = models.Conversation.query.filter_by(id=conv_id, user_id=user.id, mode="code").first() if conv_id else None
     is_new = conv is None
@@ -1190,7 +1350,10 @@ def code_approve():
     _add_tool_result_message(conv.id, pending["id"], pending["name"], result)
     _save_pending(conv, None)
     conv_id = conv.id
-    model = pick_model(data)
+    # "auto" has no fresh message to route on here (this just continues an
+    # already-approved action) - stay on the accurate model rather than
+    # guessing from nothing.
+    model = ACCURATE_MODEL if data.get("model") == "auto" else pick_model(data)
 
     def generate():
         yield f"data: {json.dumps({'executed': result[:1200]})}\n\n"
@@ -1214,7 +1377,7 @@ def code_deny():
     )
     _save_pending(conv, None)
     conv_id = conv.id
-    model = pick_model(data)
+    model = ACCURATE_MODEL if data.get("model") == "auto" else pick_model(data)
     workspace_root = code_agent.user_workspace(g.user.id)
     return Response(stream_with_context(_run_code_loop(conv_id, model, workspace_root)), mimetype="text/event-stream")
 
