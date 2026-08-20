@@ -38,6 +38,7 @@ import sys
 import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import markdown as md
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, stream_with_context, url_for
@@ -265,7 +266,17 @@ ANALYSER_URL = os.environ.get("ANALYSER_URL", "http://127.0.0.1:5000/")
 # first" (which could easily be wrong on an already-populated database).
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
 
-PUBLIC_ENDPOINTS = {"login", "signup", "static", "forgot_password", "reset_password"}
+PUBLIC_ENDPOINTS = {"login", "signup", "static", "forgot_password", "reset_password", "service_worker"}
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Served from the root (not /static/sw.js) so its default scope covers
+    # the whole app, not just /static/ - required for it to control /, /code, etc.
+    # A plain Response (not send_from_directory's conditional/caching path)
+    # avoids duplicate response headers that make browsers reject the SW fetch.
+    sw_path = Path(app.static_folder) / "sw.js"
+    return Response(sw_path.read_text(encoding="utf-8"), mimetype="application/javascript")
 
 
 @app.before_request
