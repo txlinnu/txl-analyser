@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#C15F3C">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js')); }</script>
+<script>(function(){var t=localStorage.getItem('txlcloud-theme')||'dark';if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);})();</script>
 <style>
   {{ pygments_css | safe }}
   :root {
@@ -196,7 +197,7 @@ sidebarScrim.addEventListener('click', () => {
   sidebarScrim.classList.remove('open');
 });
 
-const savedTheme = localStorage.getItem('txlcloud-theme');
+const savedTheme = localStorage.getItem('txlcloud-theme') || 'dark';
 if (savedTheme === 'light' || savedTheme === 'dark') {
   document.documentElement.setAttribute('data-theme', savedTheme);
 }
