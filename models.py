@@ -11,6 +11,7 @@ production) - otherwise falls back to a local SQLite file
 """
 
 import os
+import sys
 from datetime import datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
@@ -48,14 +49,20 @@ def _migrate(engine):
         "ALTER TABLE messages ADD COLUMN tool_call_id VARCHAR(64)",
         "ALTER TABLE messages ADD COLUMN tool_name VARCHAR(64)",
         "ALTER TABLE users ADD COLUMN reset_token VARCHAR(64)",
-        "ALTER TABLE users ADD COLUMN reset_token_expires DATETIME",
+        "ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP",
     ]
     for stmt in statements:
         try:
             with engine.begin() as conn:
                 conn.exec_driver_sql(stmt)
-        except Exception:
-            pass  # column already exists
+        except Exception as e:
+            # Usually just "column already exists" (expected, stays quiet).
+            # Logged (not swallowed silently) so a genuine migration bug -
+            # e.g. SQL that's invalid on this specific database engine -
+            # shows up in the logs instead of failing invisibly at startup
+            # and then surfacing later as a confusing query-time error.
+            if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+                print(f"[migrate] warning: {stmt!r} failed: {e}", file=sys.stderr)
 
 
 def _utcnow():
