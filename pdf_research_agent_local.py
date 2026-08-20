@@ -170,10 +170,18 @@ def web_search(query: str, max_results: int = 5) -> str:
       str: A formatted list of results, each with a title, URL, and short snippet.
     """
     max_results = max(1, min(int(max_results), 10))
-    try:
-        results = DDGS().text(query, max_results=max_results)
-    except Exception as e:
-        return f"Search failed: {e}"
+    last_error = None
+    for attempt in range(2):  # one retry - DDGS backends sometimes fail transiently
+        try:
+            results = DDGS().text(query, max_results=max_results)
+            break
+        except Exception as e:
+            last_error = e
+            print(f"[web_search] attempt {attempt + 1} failed for {query!r}: {e}", file=sys.stderr)
+            if attempt == 0:
+                time.sleep(1.5)
+    else:
+        return f"Search failed: {last_error}"
     if not results:
         return "No results found."
     lines = []
