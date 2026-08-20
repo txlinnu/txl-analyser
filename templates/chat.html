@@ -592,11 +592,20 @@
   .quoted-reply button:hover { color: var(--danger-text); }
 
   .image-attachment {
-    max-width: 760px; margin: 0 auto 8px; display: flex; align-items: center; gap: 10px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    max-width: 760px; margin: 0 auto 10px; display: flex;
   }
-  .image-attachment img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
-  .image-attachment .text { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--muted); }
+  .image-attachment .thumb-wrap { position: relative; display: inline-block; }
+  .image-attachment img {
+    display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 12px;
+    border: 1px solid var(--border); box-shadow: var(--shadow);
+  }
+  .image-attachment button {
+    position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; padding: 0;
+    border-radius: 50%; border: 1px solid var(--border); background: var(--card);
+    color: var(--muted); cursor: pointer; font-size: 0.72rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow);
+  }
+  .image-attachment button:hover { color: var(--danger-text); border-color: var(--danger-border); }
   .image-attachment button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; flex-shrink: 0; }
   .image-attachment button:hover { color: var(--danger-text); }
   .msg-image {
@@ -1909,8 +1918,8 @@ function setPendingImage(dataUrl) {
   pendingImage = dataUrl;
   pendingAttachment = null; // an image and a text-file attachment aren't combined
   attachmentSlot.innerHTML =
-    '<div class="image-attachment"><img src="' + dataUrl + '" alt=""><div class="text">Image attached</div>' +
-    '<button type="button" title="Remove image">✕</button></div>';
+    '<div class="image-attachment"><div class="thumb-wrap"><img src="' + dataUrl + '" alt="Attached image">' +
+    '<button type="button" title="Remove image">✕</button></div></div>';
   attachmentSlot.querySelector('button').addEventListener('click', () => {
     pendingImage = null;
     attachmentSlot.innerHTML = '';
