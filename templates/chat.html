@@ -449,9 +449,12 @@
   .msg-col { display: flex; flex-direction: column; min-width: 0; }
   .msg.user .msg-col { align-items: flex-end; max-width: 82%; }
   .msg.assistant .msg-col { flex: 1; min-width: 0; max-width: calc(100% - 36px); }
-  .msg-actions { display: flex; gap: 4px; margin-top: 3px; opacity: 0; transition: opacity 0.1s ease; }
+  .msg-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.1s ease; }
   .msg:hover .msg-actions { opacity: 1; }
   .msg-actions.always-visible { opacity: 1; }
+  .msg-footer { display: flex; align-items: center; gap: 8px; margin-top: 3px; min-height: 20px; }
+  .msg.user .msg-footer { flex-direction: row-reverse; }
+  .msg-time { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; white-space: nowrap; }
   .msg-action {
     border: none; background: none; color: var(--muted); cursor: pointer;
     font-size: 0.72rem; padding: 3px 6px; border-radius: 5px;
@@ -909,8 +912,11 @@
               <div class="msg-col">
                 {% if m.image_data %}<img class="msg-image" src="{{ m.image_data }}" alt="Attached image">{% endif %}
                 <div class="bubble">{{ m.text }}</div>
-                <div class="msg-actions">
-                  <button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button>
+                <div class="msg-footer">
+                  <div class="msg-actions">
+                    <button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button>
+                  </div>
+                  <span class="msg-time" data-created="{{ m.created_at }}"></span>
                 </div>
               </div>
             </div>
@@ -919,11 +925,14 @@
               <div class="avatar">✦</div>
               <div class="msg-col">
                 <div class="bubble">{{ m.html | safe }}</div>
-                {% if m.is_last %}
-                <div class="msg-actions always-visible">
-                  <button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>
+                <div class="msg-footer">
+                  {% if m.is_last %}
+                  <div class="msg-actions always-visible">
+                    <button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>
+                  </div>
+                  {% endif %}
+                  <span class="msg-time" data-created="{{ m.created_at }}"></span>
                 </div>
-                {% endif %}
               </div>
             </div>
           {% endif %}
@@ -1091,8 +1100,43 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return '';
+  const then = new Date(isoString).getTime();
+  if (isNaN(then)) return '';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 30) return 'Just now';
+  if (diffSec < 60) return diffSec + 's ago';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + (diffMin === 1 ? ' minute ago' : ' minutes ago');
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + (diffHr === 1 ? ' hour ago' : ' hours ago');
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return diffDay + (diffDay === 1 ? ' day ago' : ' days ago');
+  const d = new Date(isoString);
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function renderAllTimestamps() {
+  document.querySelectorAll('.msg-time[data-created]').forEach(el => {
+    const created = el.dataset.created;
+    el.textContent = created ? timeAgo(created) : '';
+  });
+}
+renderAllTimestamps();
+setInterval(renderAllTimestamps, 60000); // keep "2 minutes ago" etc. fresh without a reload
+
 function scrollToBottom() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function setMsgTime(msgDiv, isoString) {
+  const el = msgDiv.querySelector('.msg-time');
+  if (!el) return;
+  el.dataset.created = isoString || '';
+  el.textContent = isoString ? timeAgo(isoString) : '';
 }
 
 function addUserMessage(text, imageDataUrl) {
@@ -1103,7 +1147,10 @@ function addUserMessage(text, imageDataUrl) {
     '<div class="msg-col">' +
       (imageDataUrl ? '<img class="msg-image" alt="Attached image">' : '') +
       '<div class="bubble"></div>' +
-      '<div class="msg-actions"><button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button></div>' +
+      '<div class="msg-footer">' +
+        '<div class="msg-actions"><button class="msg-action edit-msg-btn" type="button" title="Edit">✎ Edit</button></div>' +
+        '<span class="msg-time"></span>' +
+      '</div>' +
     '</div>';
   if (imageDataUrl) div.querySelector('.msg-image').src = imageDataUrl;
   div.querySelector('.bubble').textContent = text;
@@ -1118,22 +1165,36 @@ function addAssistantPlaceholder() {
   wrapEl.querySelectorAll('.msg.assistant .msg-actions.always-visible').forEach(el => el.remove());
   const div = document.createElement('div');
   div.className = 'msg assistant';
-  div.innerHTML = '<div class="avatar">✦</div><div class="msg-col"><div class="bubble streaming"></div></div>';
+  div.innerHTML =
+    '<div class="avatar">✦</div><div class="msg-col"><div class="bubble streaming"></div>' +
+    '<div class="msg-footer"><span class="msg-time"></span></div></div>';
   wrapEl.appendChild(div);
   scrollToBottom();
   return div.querySelector('.bubble');
 }
 
-function finishAssistantBubble(bubble, html) {
+function finishAssistantBubble(bubble, html, createdAt) {
   bubble.classList.remove('streaming');
   bubble.innerHTML = html;
   enhanceCodeBlocks(bubble);
   const col = bubble.closest('.msg-col');
-  if (col && !col.querySelector('.msg-actions')) {
-    const actions = document.createElement('div');
-    actions.className = 'msg-actions always-visible';
-    actions.innerHTML = '<button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>';
-    col.appendChild(actions);
+  if (col) {
+    let footer = col.querySelector('.msg-footer');
+    if (!footer) {
+      footer = document.createElement('div');
+      footer.className = 'msg-footer';
+      col.appendChild(footer);
+    }
+    if (!footer.querySelector('.msg-actions')) {
+      const actions = document.createElement('div');
+      actions.className = 'msg-actions always-visible';
+      actions.innerHTML = '<button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>';
+      footer.insertBefore(actions, footer.firstChild);
+    }
+    if (!footer.querySelector('.msg-time')) {
+      footer.appendChild(document.createElement('span')).className = 'msg-time';
+    }
+    if (createdAt) setMsgTime(col.closest('.msg'), createdAt);
   }
 }
 
@@ -1343,12 +1404,13 @@ async function sendMessage(text) {
     await consumeSSE(resp, (payload) => {
       if (payload.user_message_id) {
         userDiv.dataset.msgId = payload.user_message_id;
+        setMsgTime(userDiv, payload.user_created_at);
       } else if (payload.conv_id) {
         currentConvId = payload.conv_id;
         history.pushState({}, '', '/?c=' + payload.conv_id);
         addConvToSidebar(payload.conv_id, payload.title);
       } else if (payload.done) {
-        finishAssistantBubble(bubble, payload.html);
+        finishAssistantBubble(bubble, payload.html, payload.created_at);
       } else if (payload.delta) {
         raw += payload.delta;
         bubble.textContent = raw;
@@ -1368,7 +1430,7 @@ async function sendMessage(text) {
       // stop the streaming indicator and offer regenerate like a normal
       // finished reply.
       if (raw.trim()) {
-        finishAssistantBubble(bubble, escapeHtml(raw).replace(/\n/g, '<br>'));
+        finishAssistantBubble(bubble, escapeHtml(raw).replace(/\n/g, '<br>'), new Date().toISOString());
       } else {
         bubble.closest('.msg').remove();
       }
@@ -1399,7 +1461,7 @@ async function regenerateLast() {
       }),
     });
     await consumeSSE(resp, (payload) => {
-      if (payload.done) finishAssistantBubble(bubble, payload.html);
+      if (payload.done) finishAssistantBubble(bubble, payload.html, payload.created_at);
       else if (payload.delta) { raw += payload.delta; bubble.textContent = raw; scrollToBottom(); }
     });
   } catch (err) {
@@ -1470,8 +1532,9 @@ function startEditMessage(msgDiv) {
         }),
       });
       await consumeSSE(resp, (payload) => {
-        if (payload.done) finishAssistantBubble(bubble, payload.html);
+        if (payload.done) finishAssistantBubble(bubble, payload.html, payload.created_at);
         else if (payload.delta) { raw += payload.delta; bubble.textContent = raw; scrollToBottom(); }
+        else if (payload.edited_created_at) setMsgTime(msgDiv, payload.edited_created_at);
         // 'truncated' event: acknowledged implicitly, DOM already truncated above.
       });
     } catch (err) {

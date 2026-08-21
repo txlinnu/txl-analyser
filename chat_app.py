@@ -688,6 +688,7 @@ def chat_home():
                 "html": render_message(m.content) if m.role == "assistant" else None,
                 "text": m.content,
                 "image_data": m.image_data,
+                "created_at": m.created_at.isoformat() + "Z" if m.created_at else None,
                 "is_last": i == len(msgs) - 1,
             }
             for i, m in enumerate(msgs)
@@ -744,6 +745,7 @@ def chat_send():
     models.db.session.add(user_msg)
     models.db.session.commit()
     user_message_id = user_msg.id
+    user_created_at = user_msg.created_at.isoformat() + "Z"
     history = [{"role": m.role, "content": m.content} for m in conv.messages]
     conv_id, conv_title = conv.id, conv.title
 
@@ -796,7 +798,7 @@ def chat_send():
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
-        yield f"data: {json.dumps({'user_message_id': user_message_id})}\n\n"
+        yield f"data: {json.dumps({'user_message_id': user_message_id, 'user_created_at': user_created_at})}\n\n"
         chunks = []
         try:
             for delta in reply_fn(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
@@ -813,10 +815,12 @@ def chat_send():
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
         full_reply = "".join(chunks).strip()
-        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=full_reply))
+        assistant_msg = models.Message(conversation_id=conv_id, role="assistant", content=full_reply)
+        models.db.session.add(assistant_msg)
         models.db.session.commit()
         html_out = render_message(full_reply)
-        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+        created_at = assistant_msg.created_at.isoformat() + "Z"
+        yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -858,10 +862,12 @@ def chat_regenerate(conv_id):
         old = models.Message.query.get(old_assistant_id)
         if old:
             models.db.session.delete(old)
-        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=full_reply))
+        assistant_msg = models.Message(conversation_id=conv_id, role="assistant", content=full_reply)
+        models.db.session.add(assistant_msg)
         models.db.session.commit()
         html_out = render_message(full_reply)
-        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+        created_at = assistant_msg.created_at.isoformat() + "Z"
+        yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -892,8 +898,10 @@ def chat_edit(conv_id):
         models.Message.conversation_id == conv_id, models.Message.id >= target.id
     ).all():
         models.db.session.delete(m)
-    models.db.session.add(models.Message(conversation_id=conv_id, role="user", content=new_text))
+    edited_msg = models.Message(conversation_id=conv_id, role="user", content=new_text)
+    models.db.session.add(edited_msg)
     models.db.session.commit()
+    edited_created_at = edited_msg.created_at.isoformat() + "Z"
 
     history = [{"role": m.role, "content": m.content} for m in _ordered_messages(conv_id)]
     extra_blocks = []
@@ -928,7 +936,7 @@ def chat_edit(conv_id):
     reply_fn = deep_check_reply if data.get("deep_check") else agent.stream_reply
 
     def generate():
-        yield f"data: {json.dumps({'truncated': True})}\n\n"
+        yield f"data: {json.dumps({'truncated': True, 'edited_created_at': edited_created_at})}\n\n"
         chunks = []
         try:
             for delta in reply_fn(history, model, custom_instructions=custom_instructions):
@@ -939,10 +947,12 @@ def chat_edit(conv_id):
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
         full_reply = "".join(chunks).strip()
-        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=full_reply))
+        assistant_msg = models.Message(conversation_id=conv_id, role="assistant", content=full_reply)
+        models.db.session.add(assistant_msg)
         models.db.session.commit()
         html_out = render_message(full_reply)
-        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+        created_at = assistant_msg.created_at.isoformat() + "Z"
+        yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1310,10 +1320,12 @@ def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = 
             _add_tool_result_message(conv_id, call_id, name, f"Error: unknown tool '{name}'.")
             continue
 
-        models.db.session.add(models.Message(conversation_id=conv_id, role="assistant", content=text or ""))
+        assistant_msg = models.Message(conversation_id=conv_id, role="assistant", content=text or "")
+        models.db.session.add(assistant_msg)
         models.db.session.commit()
         html_out = render_message(text or "")
-        yield f"data: {json.dumps({'done': True, 'html': html_out})}\n\n"
+        created_at = assistant_msg.created_at.isoformat() + "Z"
+        yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
         return
 
     yield f"data: {json.dumps({'error': 'Reached the max number of tool steps for this turn - try breaking the task down.'})}\n\n"
@@ -1326,7 +1338,7 @@ def _render_code_transcript(conv: models.Conversation):
     while i < len(messages):
         m = messages[i]
         if m.role == "user":
-            out.append({"kind": "user", "text": m.content})
+            out.append({"kind": "user", "text": m.content, "created_at": m.created_at.isoformat() + "Z" if m.created_at else None})
         elif m.role == "assistant" and m.tool_calls_json:
             call = json.loads(m.tool_calls_json)[0]
             name = call["function"]["name"]
@@ -1336,7 +1348,7 @@ def _render_code_transcript(conv: models.Conversation):
                 result = messages[i + 1].content
             out.append({"kind": "action", "name": name, "args": args, "result": result})
         elif m.role == "assistant" and m.content:
-            out.append({"kind": "assistant", "html": render_message(m.content)})
+            out.append({"kind": "assistant", "html": render_message(m.content), "created_at": m.created_at.isoformat() + "Z" if m.created_at else None})
         i += 1
     return out
 
@@ -1445,14 +1457,17 @@ def code_send():
     elif _pending(conv):
         return jsonify({"error": "Resolve the pending action first."}), 409
 
-    models.db.session.add(models.Message(conversation_id=conv.id, role="user", content=message))
+    user_msg = models.Message(conversation_id=conv.id, role="user", content=message)
+    models.db.session.add(user_msg)
     models.db.session.commit()
     conv_id, conv_title, conv_autonomous = conv.id, conv.title, conv.autonomous
+    user_created_at = user_msg.created_at.isoformat() + "Z"
     workspace_root = code_agent.resolve_workspace(user.id, conv.workspace_path)
 
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
+        yield f"data: {json.dumps({'user_created_at': user_created_at})}\n\n"
         yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv_autonomous)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
