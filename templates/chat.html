@@ -1198,6 +1198,15 @@ function autosize() {
 }
 inputEl.addEventListener('input', autosize);
 
+let currentAbortController = null;
+
+function setSendButtonMode(isBusy) {
+  sendBtn.textContent = isBusy ? '■' : '➤';
+  sendBtn.title = isBusy ? 'Stop generating' : 'Send';
+  sendBtn.classList.toggle('stop-mode', isBusy);
+  sendBtn.disabled = false; // stays clickable while busy, so it can be used to stop
+}
+
 async function sendMessage(text) {
   text = (text !== undefined ? text : inputEl.value).trim();
   if (!text || busy) return;
@@ -1216,13 +1225,15 @@ async function sendMessage(text) {
   attachmentSlot.innerHTML = '';
 
   busy = true;
-  sendBtn.disabled = true;
+  setSendButtonMode(true);
+  currentAbortController = new AbortController();
   inputEl.value = '';
   autosize();
   const userDiv = addUserMessage(text, imageToSend);
   const bubble = addAssistantPlaceholder();
 
   let raw = '';
+  let stopped = false;
   try {
     const resp = await fetch('/send', {
       method: 'POST',
@@ -1234,6 +1245,7 @@ async function sendMessage(text) {
         deep_check: deepcheckToggle.classList.contains('active'),
         image: imageToSend || undefined,
       }),
+      signal: currentAbortController.signal,
     });
     await consumeSSE(resp, (payload) => {
       if (payload.user_message_id) {
@@ -1251,11 +1263,26 @@ async function sendMessage(text) {
       }
     });
   } catch (err) {
-    bubble.closest('.msg').remove();
-    addErrorNote(err.message || 'Something went wrong. Please try again.');
+    if (err.name === 'AbortError') {
+      stopped = true;
+    } else {
+      bubble.closest('.msg').remove();
+      addErrorNote(err.message || 'Something went wrong. Please try again.');
+    }
   } finally {
+    if (stopped) {
+      // Keep whatever streamed so far rather than discarding it - just
+      // stop the streaming indicator and offer regenerate like a normal
+      // finished reply.
+      if (raw.trim()) {
+        finishAssistantBubble(bubble, escapeHtml(raw).replace(/\n/g, '<br>'));
+      } else {
+        bubble.closest('.msg').remove();
+      }
+    }
     busy = false;
-    sendBtn.disabled = false;
+    currentAbortController = null;
+    setSendButtonMode(false);
     inputEl.focus();
   }
 }
@@ -1371,7 +1398,13 @@ wrapEl.addEventListener('click', (e) => {
   else if (regenBtn) regenerateLast();
 });
 
-sendBtn.addEventListener('click', () => sendMessage());
+sendBtn.addEventListener('click', () => {
+  if (busy) {
+    if (currentAbortController) currentAbortController.abort();
+  } else {
+    sendMessage();
+  }
+});
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();

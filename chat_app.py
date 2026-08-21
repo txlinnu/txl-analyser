@@ -1229,8 +1229,17 @@ def _api_messages_for(conv_id) -> list:
     return out
 
 
-def _run_code_loop(conv_id: int, model: str, workspace_root):
+def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = False):
     system = code_agent.SYSTEM_PROMPT_TEMPLATE.format(workspace=workspace_root)
+    if autonomous:
+        system += (
+            "\n\nAutonomous mode is ON for this session: write_file and "
+            "run_command execute immediately, without waiting for approval "
+            "each time - the user is not watching every step live, so "
+            "don't ask permission or narrate 'may I now...'. Just do the "
+            "work, and give a clear summary of everything you did at the "
+            "end. Still be careful: this is real, unreviewed execution."
+        )
 
     for _ in range(code_agent.MAX_TOOL_STEPS):
         full_messages = [{"role": "system", "content": system}] + _api_messages_for(conv_id)
@@ -1256,6 +1265,15 @@ def _run_code_loop(conv_id: int, model: str, workspace_root):
                 continue
 
             if name in code_agent.APPROVAL_TOOLS:
+                if autonomous:
+                    try:
+                        result = code_agent.execute_pending(name, args, workspace_root)
+                    except Exception as e:
+                        result = f"Error: {e}"
+                    _add_tool_call_message(conv_id, call_id, name, args)
+                    _add_tool_result_message(conv_id, call_id, name, result)
+                    yield f"data: {json.dumps({'action': {'kind': name, 'args': args, 'result': result[:1200], 'auto': True}})}\n\n"
+                    continue
                 try:
                     description = code_agent.describe_pending(name, args, workspace_root)
                 except Exception as e:
@@ -1332,6 +1350,7 @@ def code_home():
         ungrouped=sidebar["ungrouped"],
         workspace=str(workspace_root),
         allow_custom_workspace=code_agent.ALLOW_CUSTOM_WORKSPACE,
+        autonomous=conv.autonomous if conv else False,
         analyser_url=ANALYSER_URL,
         pygments_css=PYGMENTS_CSS,
         header_badge=HEADER_BADGE,
@@ -1356,6 +1375,17 @@ def code_set_workspace(conv_id):
     return jsonify({"ok": True, "path": str(path)})
 
 
+@app.route("/code/<int:conv_id>/autonomous", methods=["POST"])
+def code_set_autonomous(conv_id):
+    conv = models.Conversation.query.filter_by(id=conv_id, user_id=g.user.id, mode="code").first()
+    if not conv:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(silent=True) or {}
+    conv.autonomous = bool(data.get("autonomous"))
+    models.db.session.commit()
+    return jsonify({"ok": True, "autonomous": conv.autonomous})
+
+
 @app.route("/code/send", methods=["POST"])
 def code_send():
     user = g.user
@@ -1378,6 +1408,7 @@ def code_send():
                 conv.workspace_path = str(code_agent.validate_custom_workspace(requested_path))
             except ValueError as e:
                 return jsonify({"error": str(e)}), 400
+        conv.autonomous = bool(data.get("autonomous"))
         models.db.session.add(conv)
         models.db.session.commit()
     elif _pending(conv):
@@ -1385,13 +1416,13 @@ def code_send():
 
     models.db.session.add(models.Message(conversation_id=conv.id, role="user", content=message))
     models.db.session.commit()
-    conv_id, conv_title = conv.id, conv.title
+    conv_id, conv_title, conv_autonomous = conv.id, conv.title, conv.autonomous
     workspace_root = code_agent.resolve_workspace(user.id, conv.workspace_path)
 
     def generate():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
-        yield from _run_code_loop(conv_id, model, workspace_root)
+        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv_autonomous)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1421,7 +1452,7 @@ def code_approve():
 
     def generate():
         yield f"data: {json.dumps({'executed': result[:1200]})}\n\n"
-        yield from _run_code_loop(conv_id, model, workspace_root)
+        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1443,7 +1474,10 @@ def code_deny():
     conv_id = conv.id
     model = ACCURATE_MODEL if data.get("model") == "auto" else pick_model(data)
     workspace_root = code_agent.resolve_workspace(g.user.id, conv.workspace_path)
-    return Response(stream_with_context(_run_code_loop(conv_id, model, workspace_root)), mimetype="text/event-stream")
+    return Response(
+        stream_with_context(_run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous)),
+        mimetype="text/event-stream",
+    )
 
 
 if __name__ == "__main__":

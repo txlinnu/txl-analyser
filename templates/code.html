@@ -109,6 +109,21 @@
   }
   .workspace-change-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+  .autonomous-box { padding: 10px 12px; }
+  .autonomous-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+  .autonomous-sub { font-size: 0.7rem; color: var(--muted); line-height: 1.3; }
+  .switch { position: relative; display: inline-block; width: 36px; height: 21px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch-track {
+    position: absolute; inset: 0; background: var(--border); border-radius: 999px; transition: background 0.15s;
+  }
+  .switch-track::before {
+    content: ""; position: absolute; width: 15px; height: 15px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.15s;
+  }
+  .switch input:checked + .switch-track { background: var(--accent); }
+  .switch input:checked + .switch-track::before { transform: translateX(15px); }
+
   .sidebar-search {
     width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
     background: var(--card); color: var(--text); font-size: 0.82rem; margin-bottom: 14px; outline: none;
@@ -229,6 +244,10 @@
   .action-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 0.84rem; cursor: pointer; user-select: none; }
   .action-head .icon { flex-shrink: 0; }
   .action-head .summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .auto-badge {
+    flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--accent);
+    background: var(--accent-soft); border-radius: 999px; padding: 2px 8px;
+  }
   .action-head .chevron { color: var(--muted); font-size: 0.75rem; transition: transform 0.15s ease; }
   .action-card.expanded .chevron { transform: rotate(90deg); }
   .action-body { display: none; border-top: 1px solid var(--border); padding: 10px 12px; }
@@ -268,6 +287,18 @@
   .error-note { max-width: 780px; margin: 0 auto 16px; background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 10px; padding: 11px 14px; font-size: 0.86rem; }
 
   #composer-outer { flex-shrink: 0; padding: 10px 20px 22px; }
+  .composer-wrap { position: relative; max-width: 820px; margin: 0 auto; }
+  .skills-menu {
+    display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 8px);
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 6px; max-height: 260px; overflow-y: auto; z-index: 5;
+  }
+  .skills-menu.open { display: block; }
+  .skill-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; cursor: pointer; }
+  .skill-item:hover, .skill-item.active { background: var(--main-bg); }
+  .skill-item .icon { font-size: 1rem; flex-shrink: 0; }
+  .skill-item .name { font-weight: 600; font-size: 0.86rem; }
+  .skill-item .desc { color: var(--muted); font-size: 0.76rem; }
   .composer-inner { max-width: 820px; margin: 0 auto; display: flex; align-items: flex-end; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 26px; padding: 18px 18px 18px 26px; box-shadow: var(--shadow); }
   #input { flex: 1; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 1.12rem; resize: none; outline: none; max-height: 200px; padding: 14px 0; }
   button.send-btn { flex-shrink: 0; width: 48px; height: 48px; border: none; border-radius: 15px; background: var(--accent); color: #fff; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -328,6 +359,18 @@
       {% if allow_custom_workspace %}
       <button class="workspace-change-btn" id="workspace-change-btn" type="button">Change folder…</button>
       {% endif %}
+    </div>
+    <div class="workspace-box autonomous-box">
+      <label class="autonomous-row">
+        <div>
+          <div class="label" style="margin-bottom:2px;">Autonomous mode</div>
+          <div class="autonomous-sub">Runs write/command actions without asking each time</div>
+        </div>
+        <span class="switch">
+          <input type="checkbox" id="autonomous-toggle" {% if autonomous %}checked{% endif %}>
+          <span class="switch-track"></span>
+        </span>
+      </label>
     </div>
     <input class="sidebar-search" id="sidebar-search" type="text" placeholder="Search sessions...">
 
@@ -407,9 +450,12 @@
         <div id="pending-slot"></div>
       {% endif %}
       <div id="quoted-slot"></div>
-      <div class="composer-inner">
-        <textarea id="input" rows="1" placeholder="Ask TXL Cloud to build or change something..." autofocus></textarea>
-        <button class="send-btn" id="send-btn" type="button" aria-label="Send">➤</button>
+      <div class="composer-wrap">
+        <div class="skills-menu" id="skills-menu"></div>
+        <div class="composer-inner">
+          <textarea id="input" rows="1" placeholder="Ask TXL Cloud to build or change something... (try / for skills)" autofocus></textarea>
+          <button class="send-btn" id="send-btn" type="button" aria-label="Send">➤</button>
+        </div>
       </div>
       <p class="footnote">File writes and commands only run after you click Approve. Nothing outside the workspace folder is reachable.</p>
     </div>
@@ -439,6 +485,7 @@ const quotedSlot = document.getElementById('quoted-slot');
 
 let currentConvId = {{ (active_id | tojson) if active_id else 'null' }};
 let pendingWorkspacePath = null; // set via "Change folder..." before the first message of a new session
+const autonomousToggle = document.getElementById('autonomous-toggle');
 let busy = false;
 let currentPendingCard = null;
 
@@ -466,7 +513,7 @@ function actionSummary(kind, args) {
   return meta.verb + ': ' + (args.path || '');
 }
 
-function buildActionCard(kind, args, result) {
+function buildActionCard(kind, args, result, auto) {
   const card = document.createElement('div');
   card.className = 'action-card';
   card.dataset.kind = kind;
@@ -475,6 +522,7 @@ function buildActionCard(kind, args, result) {
     '<div class="action-head">' +
       '<span class="icon">' + meta.icon + '</span>' +
       '<span class="summary"></span>' +
+      (auto ? '<span class="auto-badge" title="Ran automatically - autonomous mode was on">⚡ Auto</span>' : '') +
       '<span class="chevron">›</span>' +
     '</div>' +
     '<div class="action-body"><pre></pre></div>';
@@ -599,9 +647,13 @@ function autosize() {
 }
 inputEl.addEventListener('input', autosize);
 
+let currentAbortController = null;
+
 function setBusy(v) {
   busy = v;
-  sendBtn.disabled = v;
+  sendBtn.textContent = v ? '■' : '➤';
+  sendBtn.title = v ? 'Stop' : 'Send';
+  sendBtn.disabled = false; // stays clickable while busy, so it can stop
   inputEl.disabled = v;
 }
 
@@ -629,7 +681,7 @@ async function streamEvents(resp) {
         history.pushState({}, '', '/code?c=' + payload.conv_id);
         addConvToSidebar(payload.conv_id, payload.title);
       } else if (payload.action) {
-        wrapEl.appendChild(buildActionCard(payload.action.kind, payload.action.args, payload.action.result));
+        wrapEl.appendChild(buildActionCard(payload.action.kind, payload.action.args, payload.action.result, payload.action.auto));
         scrollToBottom();
       } else if (payload.pending) {
         currentPendingCard = buildPendingCard(payload.pending);
@@ -659,6 +711,7 @@ async function sendMessage() {
   autosize();
   addUserMessage(text);
 
+  currentAbortController = new AbortController();
   try {
     const resp = await fetch('/code/send', {
       method: 'POST',
@@ -666,12 +719,15 @@ async function sendMessage() {
       body: JSON.stringify({
         message: text, model: modelSelect.value, conv_id: currentConvId,
         workspace_path: currentConvId ? undefined : pendingWorkspacePath || undefined,
+        autonomous: currentConvId ? undefined : autonomousToggle.checked,
       }),
+      signal: currentAbortController.signal,
     });
     await streamEvents(resp);
   } catch (err) {
-    addErrorNote(err.message || 'Something went wrong.');
+    if (err.name !== 'AbortError') addErrorNote(err.message || 'Something went wrong.');
   } finally {
+    currentAbortController = null;
     setBusy(false);
     inputEl.focus();
   }
@@ -681,22 +737,31 @@ async function resolvePending(card, approved) {
   const buttons = card.querySelectorAll('button');
   buttons.forEach(b => b.disabled = true);
   setBusy(true);
+  currentAbortController = new AbortController();
   try {
     const resp = await fetch(approved ? '/code/approve' : '/code/deny', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conv_id: currentConvId, model: modelSelect.value }),
+      signal: currentAbortController.signal,
     });
     await streamEvents(resp);
   } catch (err) {
-    addErrorNote(err.message || 'Something went wrong.');
+    if (err.name !== 'AbortError') addErrorNote(err.message || 'Something went wrong.');
   } finally {
+    currentAbortController = null;
     setBusy(false);
     inputEl.focus();
   }
 }
 
-sendBtn.addEventListener('click', sendMessage);
+sendBtn.addEventListener('click', () => {
+  if (busy) {
+    if (currentAbortController) currentAbortController.abort();
+  } else {
+    sendMessage();
+  }
+});
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
@@ -730,6 +795,25 @@ if (workspaceChangeBtn) {
     }
   });
 }
+
+autonomousToggle.addEventListener('change', async () => {
+  if (!currentConvId) return; // no active session yet - picked up on the first /code/send instead
+  try {
+    const resp = await fetch('/code/' + currentConvId + '/autonomous', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autonomous: autonomousToggle.checked }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      addErrorNote(data.error || 'Could not change autonomous mode.');
+      autonomousToggle.checked = !autonomousToggle.checked; // revert on failure
+    }
+  } catch (err) {
+    addErrorNote(err.message || 'Could not change autonomous mode.');
+    autonomousToggle.checked = !autonomousToggle.checked;
+  }
+});
 
 sidebarToggle.addEventListener('click', () => {
   sidebar.classList.toggle('open');
