@@ -229,6 +229,11 @@
   }
   .conv-action:hover { color: var(--accent); background: var(--card); }
   .conv-empty, .conv-no-results { padding: 8px 10px; font-size: 0.8rem; color: var(--muted); }
+  .conv-search-item { display: block; text-decoration: none; }
+  .conv-search-snippet {
+    font-size: 0.74rem; color: var(--muted); padding: 0 10px 8px 26px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 
   .projects-label { display: flex; align-items: center; justify-content: space-between; }
   .projects-label button {
@@ -492,6 +497,8 @@
     color: var(--accent);
   }
   @keyframes blink { 50% { opacity: 0; } }
+  .status-text { color: var(--muted); font-style: italic; animation: statusPulse 1.6s ease-in-out infinite; }
+  @keyframes statusPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
   .bubble h1, .bubble h2, .bubble h3 { font-size: 1.02rem; margin: 14px 0 6px; }
@@ -833,6 +840,7 @@
     <button class="conv-action pin-btn {{ 'pinned' if c.pinned }}" type="button" title="{{ 'Unpin' if c.pinned else 'Pin' }}">📌</button>
     <button class="conv-action project-btn" type="button" title="Move to project">📁</button>
     <button class="conv-action rename-btn" type="button" title="Rename">✎</button>
+    <a class="conv-action export-btn" href="/conv/{{ c.id }}/export" title="Export as Markdown">⬇</a>
     <button class="conv-action delete-btn" type="button" title="Delete">🗑</button>
   </div>
 </div>
@@ -853,37 +861,40 @@
     <input class="sidebar-search" id="sidebar-search" type="text" placeholder="Search chats...">
 
     <div class="conv-list" id="conv-list">
-      {% if pinned %}
-        <div class="conv-list-label">📌 Pinned</div>
-        <div class="conv-group-items">
-          {% for c in pinned %}{{ conv_item(c) }}{% endfor %}
-        </div>
-      {% endif %}
-
-      <div class="conv-list-label projects-label">
-        <span>Projects</span>
-        <button id="new-project-btn" type="button" title="New project">＋</button>
-      </div>
-      {% for proj in projects %}
-        <div class="project-group" data-project-id="{{ proj.id }}">
-          <div class="project-head">
-            <span class="project-toggle">▾</span>
-            <span class="project-name">📁 {{ proj.name }}</span>
-            <button class="project-files-btn" type="button" title="Knowledge files">📎</button>
-            <button class="project-delete-btn" type="button" title="Delete project">✕</button>
+      <div id="conv-list-body">
+        {% if pinned %}
+          <div class="conv-list-label">📌 Pinned</div>
+          <div class="conv-group-items">
+            {% for c in pinned %}{{ conv_item(c) }}{% endfor %}
           </div>
-          <div class="conv-group-items project-items">
-            {% for c in proj.chats %}{{ conv_item(c) }}{% endfor %}
-            {% if not proj.chats %}<div class="conv-empty">No chats here yet</div>{% endif %}
-          </div>
-        </div>
-      {% endfor %}
+        {% endif %}
 
-      <div class="conv-list-label">Chats</div>
-      <div class="conv-group-items" id="ungrouped-list">
-        {% for c in ungrouped %}{{ conv_item(c) }}{% endfor %}
-        {% if not ungrouped and not pinned and not projects %}<div class="conv-empty">No chats yet</div>{% endif %}
+        <div class="conv-list-label projects-label">
+          <span>Projects</span>
+          <button id="new-project-btn" type="button" title="New project">＋</button>
+        </div>
+        {% for proj in projects %}
+          <div class="project-group" data-project-id="{{ proj.id }}">
+            <div class="project-head">
+              <span class="project-toggle">▾</span>
+              <span class="project-name">📁 {{ proj.name }}</span>
+              <button class="project-files-btn" type="button" title="Knowledge files">📎</button>
+              <button class="project-delete-btn" type="button" title="Delete project">✕</button>
+            </div>
+            <div class="conv-group-items project-items">
+              {% for c in proj.chats %}{{ conv_item(c) }}{% endfor %}
+              {% if not proj.chats %}<div class="conv-empty">No chats here yet</div>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+        <div class="conv-list-label">Chats</div>
+        <div class="conv-group-items" id="ungrouped-list">
+          {% for c in ungrouped %}{{ conv_item(c) }}{% endfor %}
+          {% if not ungrouped and not pinned and not projects %}<div class="conv-empty">No chats yet</div>{% endif %}
+        </div>
       </div>
+      <div id="conv-search-results" style="display:none;"></div>
     </div>
 
     <div class="sidebar-footer">
@@ -1428,6 +1439,8 @@ async function sendMessage(text) {
         addConvToSidebar(payload.conv_id, payload.title);
       } else if (payload.done) {
         finishAssistantBubble(bubble, payload.html, payload.created_at);
+      } else if (payload.status) {
+        bubble.innerHTML = '<span class="status-text">' + escapeHtml(payload.status) + '</span>';
       } else if (payload.delta) {
         raw += payload.delta;
         bubble.textContent = raw;
@@ -1550,6 +1563,7 @@ function startEditMessage(msgDiv) {
       });
       await consumeSSE(resp, (payload) => {
         if (payload.done) finishAssistantBubble(bubble, payload.html, payload.created_at);
+        else if (payload.status) bubble.innerHTML = '<span class="status-text">' + escapeHtml(payload.status) + '</span>';
         else if (payload.delta) { raw += payload.delta; bubble.textContent = raw; scrollToBottom(); }
         else if (payload.edited_created_at) setMsgTime(msgDiv, payload.edited_created_at);
         // 'truncated' event: acknowledged implicitly, DOM already truncated above.
@@ -1628,27 +1642,48 @@ sidebarScrim.addEventListener('click', () => {
 });
 
 /* ---------- Sidebar search ---------- */
+const convListBody = document.getElementById('conv-list-body');
+const convSearchResults = document.getElementById('conv-search-results');
+let searchDebounce = null;
+
 sidebarSearch.addEventListener('input', () => {
-  const q = sidebarSearch.value.trim().toLowerCase();
-  let anyVisible = false;
-  convList.querySelectorAll('.conv-item').forEach(row => {
-    const title = row.querySelector('.conv-link').textContent.toLowerCase();
-    const match = !q || title.includes(q);
-    row.style.display = match ? '' : 'none';
-    if (match) anyVisible = true;
-  });
-  let noResults = convList.querySelector('.conv-no-results');
-  if (!anyVisible && q) {
-    if (!noResults) {
-      noResults = document.createElement('div');
-      noResults.className = 'conv-no-results';
-      noResults.textContent = 'No chats match "' + sidebarSearch.value.trim() + '"';
-      convList.appendChild(noResults);
-    }
-  } else if (noResults) {
-    noResults.remove();
+  const raw = sidebarSearch.value.trim();
+  const q = raw.toLowerCase();
+  if (!q) {
+    convListBody.style.display = '';
+    convSearchResults.style.display = 'none';
+    convSearchResults.innerHTML = '';
+    return;
   }
+  convListBody.style.display = 'none';
+  convSearchResults.style.display = '';
+  convSearchResults.innerHTML = '<div class="conv-list-label">Searching…</div>';
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => runChatSearch(raw), 250);
 });
+
+async function runChatSearch(query) {
+  let results = [];
+  try {
+    const resp = await fetch('/search?q=' + encodeURIComponent(query));
+    const data = await resp.json();
+    results = data.results || [];
+  } catch (e) { /* stay on the "Searching…" state's fallback below */ }
+  if (sidebarSearch.value.trim() !== query) return; // stale response, a newer query is in flight
+  if (!results.length) {
+    convSearchResults.innerHTML = '<div class="conv-no-results">No chats match "' + escapeHtml(query) + '"</div>';
+    return;
+  }
+  convSearchResults.innerHTML =
+    '<div class="conv-list-label">Search results</div>' +
+    results.map(r => {
+      const href = r.mode === 'code' ? '/code?c=' + r.id : '/?c=' + r.id;
+      const snippet = r.snippet ? '<div class="conv-search-snippet">' + escapeHtml(r.snippet) + '</div>' : '';
+      return '<a class="conv-item conv-search-item" href="' + href + '">' +
+        '<span class="conv-link">' + (r.mode === 'code' ? '⌨ ' : '') + escapeHtml(r.title) + '</span>' +
+        '</a>' + snippet;
+    }).join('');
+}
 
 /* ---------- Rename / delete conversations ---------- */
 function closeProjectMenu() {

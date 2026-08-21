@@ -111,6 +111,28 @@ def route_model(message: str) -> str:
     return ACCURATE_MODEL if looks_complex else FAST_MODEL
 
 
+_VERIFY_HINT_RE = re.compile(
+    r"\b(double.?check|verify|make sure|are you sure|fact.?check|confirm|accurate|accuracy)\b",
+    re.IGNORECASE,
+)
+_ARITHMETIC_RE = re.compile(r"\d+\s*[+\-*/×÷]\s*\d+")
+
+
+def should_auto_deep_check(message: str) -> bool:
+    """When the user leaves both the model AND Deep check on 'Auto', decide
+    whether this particular message is worth the extra ~15s draft/verify/
+    second-opinion pass on its own - so 'Auto' means the system picks the
+    right amount of care per message, not just the right model size. Only
+    applies when the user hasn't made an explicit choice either way (see
+    the call site in chat_send)."""
+    text = message or ""
+    return (
+        text.count("?") >= 2
+        or bool(_VERIFY_HINT_RE.search(text))
+        or bool(_ARITHMETIC_RE.search(text))
+    )
+
+
 # --- "Deep check" mode: self-critique + a second model's opinion + ---------
 # automated arithmetic verification, reconciled into one final answer.
 # Opt-in (the "Deep check" composer toggle) since it costs 2-3x the normal
@@ -246,17 +268,25 @@ def deep_check_reply(history, model, custom_instructions=None, image_data_url=No
     """
     Draft -> verify any arithmetic -> get a second, independent model's
     opinion -> have the primary model reconcile everything into one final
-    answer. Same yield shape as agent.stream_reply (text chunks) so it's a
-    drop-in replacement at the call site.
+    answer. Yields the same plain-string text chunks as agent.stream_reply
+    (so it's a drop-in replacement at the call site) interspersed with
+    ("status", "...") tuples marking each of the ~15s of otherwise-silent
+    steps before the final answer starts streaming - the call site turns
+    those into SSE 'status' events so the UI shows what's happening instead
+    of a frozen cursor (see the 'status' handling in chat.html's sendMessage).
     """
+    yield ("status", "Drafting an answer…")
     draft = "".join(agent.stream_reply(
         history, model, custom_instructions=custom_instructions, image_data_url=image_data_url,
     )).strip()
 
     math_notes = verify_math_claims(draft)
+    if math_notes:
+        yield ("status", "Double-checking the math…")
 
     second_opinion = ""
     if not image_data_url:  # no second vision-capable model on either backend
+        yield ("status", "Getting a second opinion…")
         try:
             second_opinion = _get_second_opinion(history, model, custom_instructions)
         except Exception as e:
@@ -283,6 +313,7 @@ def deep_check_reply(history, model, custom_instructions=None, image_data_url=No
             "or any other model to the user.)"
         ),
     }]
+    yield ("status", "Finalizing…")
     yield from agent.stream_reply(
         review_history, model, custom_instructions=custom_instructions, image_data_url=image_data_url,
     )
@@ -865,7 +896,14 @@ def chat_send():
             content += f"\n\n[{label}]:\n{block}"
         history[-1] = {"role": "user", "content": content}
 
-    reply_fn = deep_check_reply if data.get("deep_check") else agent.stream_reply
+    # "Auto" means the system decides how much care a message needs, not
+    # just which model size - so on Auto (and only when the user hasn't
+    # explicitly toggled Deep check either way), also auto-enable it for
+    # messages that look like they'd benefit (multi-part, math, "make sure").
+    use_deep_check = bool(data.get("deep_check")) or (
+        (data.get("model") or "auto") == "auto" and should_auto_deep_check(message)
+    )
+    reply_fn = deep_check_reply if use_deep_check else agent.stream_reply
 
     def generate():
         if is_new:
@@ -873,9 +911,12 @@ def chat_send():
         yield f"data: {json.dumps({'user_message_id': user_message_id, 'user_created_at': user_created_at})}\n\n"
         chunks = []
         try:
-            for delta in reply_fn(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
-                chunks.append(delta)
-                yield f"data: {json.dumps({'delta': delta})}\n\n"
+            for item in reply_fn(history, model, custom_instructions=custom_instructions, image_data_url=image_data_url):
+                if isinstance(item, tuple) and item[0] == "status":
+                    yield f"data: {json.dumps({'status': item[1]})}\n\n"
+                    continue
+                chunks.append(item)
+                yield f"data: {json.dumps({'delta': item})}\n\n"
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
             last = models.Message.query.filter_by(conversation_id=conv_id).order_by(models.Message.id.desc()).first()
@@ -1011,15 +1052,21 @@ def chat_edit(conv_id):
             content += f"\n\n[{label}]:\n{block}"
         history[-1] = {"role": "user", "content": content}
 
-    reply_fn = deep_check_reply if data.get("deep_check") else agent.stream_reply
+    use_deep_check = bool(data.get("deep_check")) or (
+        (data.get("model") or "auto") == "auto" and should_auto_deep_check(new_text)
+    )
+    reply_fn = deep_check_reply if use_deep_check else agent.stream_reply
 
     def generate():
         yield f"data: {json.dumps({'truncated': True, 'edited_created_at': edited_created_at})}\n\n"
         chunks = []
         try:
-            for delta in reply_fn(history, model, custom_instructions=custom_instructions):
-                chunks.append(delta)
-                yield f"data: {json.dumps({'delta': delta})}\n\n"
+            for item in reply_fn(history, model, custom_instructions=custom_instructions):
+                if isinstance(item, tuple) and item[0] == "status":
+                    yield f"data: {json.dumps({'status': item[1]})}\n\n"
+                    continue
+                chunks.append(item)
+                yield f"data: {json.dumps({'delta': item})}\n\n"
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -1047,6 +1094,72 @@ def conv_rename(conv_id):
     conv.title = title[:80]
     models.db.session.commit()
     return jsonify({"ok": True, "title": conv.title})
+
+
+@app.route("/search")
+def search_chats():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"ok": True, "results": []})
+    like = f"%{q}%"
+
+    title_matches = models.Conversation.query.filter(
+        models.Conversation.user_id == g.user.id,
+        models.Conversation.title.ilike(like),
+    ).order_by(models.Conversation.id.desc()).limit(30).all()
+
+    msg_matches = (
+        models.db.session.query(models.Message, models.Conversation)
+        .join(models.Conversation, models.Message.conversation_id == models.Conversation.id)
+        .filter(models.Conversation.user_id == g.user.id, models.Message.content.ilike(like))
+        .order_by(models.Message.id.desc())
+        .limit(60)
+        .all()
+    )
+
+    results = {}
+    for c in title_matches:
+        results[c.id] = {"id": c.id, "title": c.title, "mode": c.mode, "snippet": None}
+    q_lower = q.lower()
+    for m, c in msg_matches:
+        entry = results.setdefault(c.id, {"id": c.id, "title": c.title, "mode": c.mode, "snippet": None})
+        if entry["snippet"]:
+            continue
+        idx = m.content.lower().find(q_lower)
+        start = max(0, idx - 40)
+        snippet = ("…" if start > 0 else "") + m.content[start:start + 120].replace("\n", " ") + "…"
+        entry["snippet"] = snippet
+
+    ordered = sorted(results.values(), key=lambda r: r["id"], reverse=True)[:25]
+    return jsonify({"ok": True, "results": ordered})
+
+
+@app.route("/conv/<int:conv_id>/export")
+def conv_export(conv_id):
+    conv = models.Conversation.query.filter_by(id=conv_id, user_id=g.user.id).first()
+    if not conv:
+        return jsonify({"error": "Not found"}), 404
+    lines = [f"# {conv.title}", ""]
+    for m in conv.messages:
+        if m.role == "user":
+            lines.append(f"## You\n\n{m.content}\n")
+        elif m.role == "assistant" and m.content:
+            lines.append(f"## TXL Cloud\n\n{m.content}\n")
+        elif m.role == "assistant" and m.tool_calls_json:
+            try:
+                call = json.loads(m.tool_calls_json)[0]
+                name = call["function"]["name"]
+                args = json.dumps(call["function"]["arguments"])
+                lines.append(f"> 🔧 Ran `{name}`({args})\n")
+            except Exception:
+                pass
+    content = "\n".join(lines)
+    safe_title = re.sub(r"[^A-Za-z0-9\-]+", "_", conv.title).strip("_")[:60] or "conversation"
+    return Response(
+        content,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.md"'},
+    )
 
 
 @app.route("/conv/<int:conv_id>/delete", methods=["POST"])
@@ -1342,8 +1455,19 @@ def _api_messages_for(conv_id) -> list:
     return out
 
 
-def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = False):
+def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = False, user_id: int = None, extract_message: str = None):
     system = code_agent.SYSTEM_PROMPT_TEMPLATE.format(workspace=workspace_root)
+    if user_id:
+        try:
+            memory_block = _user_memory_block(user_id)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            memory_block = ""
+        if memory_block:
+            system += (
+                "\n\nWhat you remember about this user from earlier conversations - "
+                "weave it in naturally where relevant, don't just recite it back:\n" + memory_block
+            )
     if autonomous:
         system += (
             "\n\nAutonomous mode is ON for this session: write_file and "
@@ -1429,6 +1553,11 @@ def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = 
         html_out = render_message(text or "")
         created_at = assistant_msg.created_at.isoformat() + "Z"
         yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
+        if user_id and extract_message:
+            try:
+                _extract_memory(user_id, extract_message, FAST_MODEL)
+            except Exception:
+                traceback.print_exc(file=sys.stderr)
         return
 
     yield f"data: {json.dumps({'error': 'Reached the max number of tool steps for this turn - try breaking the task down.'})}\n\n"
@@ -1571,7 +1700,7 @@ def code_send():
         if is_new:
             yield f"data: {json.dumps({'conv_id': conv_id, 'title': conv_title})}\n\n"
         yield f"data: {json.dumps({'user_created_at': user_created_at})}\n\n"
-        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv_autonomous)
+        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv_autonomous, user_id=user.id, extract_message=message)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1601,7 +1730,7 @@ def code_approve():
 
     def generate():
         yield f"data: {json.dumps({'executed': result[:1200]})}\n\n"
-        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous)
+        yield from _run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous, user_id=g.user.id)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1624,7 +1753,7 @@ def code_deny():
     model = ACCURATE_MODEL if data.get("model") == "auto" else pick_model(data)
     workspace_root = code_agent.resolve_workspace(g.user.id, conv.workspace_path)
     return Response(
-        stream_with_context(_run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous)),
+        stream_with_context(_run_code_loop(conv_id, model, workspace_root, autonomous=conv.autonomous, user_id=g.user.id)),
         mimetype="text/event-stream",
     )
 
