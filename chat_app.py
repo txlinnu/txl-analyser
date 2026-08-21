@@ -454,6 +454,26 @@ def require_login():
     return None
 
 
+@app.errorhandler(500)
+def handle_unexpected_error(e):
+    """
+    Safety net for any route-level exception that happens outside a
+    streaming generator's own try/except (see chat_send/chat_edit for the
+    class of bug this guards against) - without this, Flask's default 500
+    page is HTML, which the frontend's fetch().json() calls can't parse,
+    surfacing only a generic "Something went wrong." with zero information
+    about what actually failed. Every fetch() call this app makes sends
+    Content-Type: application/json, so that's the reliable signal for
+    "this needs a JSON error back" - anything else (a real page load) gets
+    a minimal plain error page instead of Flask's default (which can leak
+    internals in some configurations).
+    """
+    traceback.print_exc(file=sys.stderr)
+    if request.is_json:
+        return jsonify({"error": "Something went wrong on our end. Please try again."}), 500
+    return Response("<h1>Something went wrong</h1><p>Please try again.</p>", status=500, mimetype="text/html")
+
+
 def pick_model(data, message: str = "") -> str:
     model = data.get("model", "")
     if model not in VALID_MODELS:
@@ -733,19 +753,32 @@ def chat_send():
 
     # Web search grounding, if the user toggled it on: deterministically search
     # (not left up to the model to decide - see pdf_research_agent_local.py for why).
+    # This whole enrichment block runs before the SSE stream starts, so any
+    # failure here has to be caught explicitly - it can't rely on generate()'s
+    # try/except, and an uncaught exception here would surface as a raw Flask
+    # 500 page (not JSON), which the frontend can only show as a generic
+    # "Something went wrong." A failed enrichment should degrade gracefully
+    # (skip that one piece), never take down the whole message.
     if data.get("web_search"):
-        results = web_search_for_message(message)
-        extra_blocks.append((
-            "Web search results for grounding - answer EVERY part of the question "
-            "above using the relevant results below; if a part genuinely isn't "
-            "covered by any result, say so explicitly rather than skipping it. "
-            "Cite the URLs you actually use, don't invent any",
-            results,
-        ))
+        try:
+            results = web_search_for_message(message)
+            extra_blocks.append((
+                "Web search results for grounding - answer EVERY part of the question "
+                "above using the relevant results below; if a part genuinely isn't "
+                "covered by any result, say so explicitly rather than skipping it. "
+                "Cite the URLs you actually use, don't invent any",
+                results,
+            ))
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
 
     # This chat's project (if any) may have reference files attached - fold
     # them in on every turn so they're not lost to history trimming.
-    knowledge = _project_knowledge_block(conv.project_id, message)
+    try:
+        knowledge = _project_knowledge_block(conv.project_id, message)
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+        knowledge = ""
     if knowledge:
         extra_blocks.append((
             "Reference material attached to this project - use it where relevant",
@@ -865,15 +898,22 @@ def chat_edit(conv_id):
     history = [{"role": m.role, "content": m.content} for m in _ordered_messages(conv_id)]
     extra_blocks = []
     if data.get("web_search"):
-        results = web_search_for_message(new_text)
-        extra_blocks.append((
-            "Web search results for grounding - answer EVERY part of the question "
-            "above using the relevant results below; if a part genuinely isn't "
-            "covered by any result, say so explicitly rather than skipping it. "
-            "Cite the URLs you actually use, don't invent any",
-            results,
-        ))
-    knowledge = _project_knowledge_block(conv.project_id, new_text)
+        try:
+            results = web_search_for_message(new_text)
+            extra_blocks.append((
+                "Web search results for grounding - answer EVERY part of the question "
+                "above using the relevant results below; if a part genuinely isn't "
+                "covered by any result, say so explicitly rather than skipping it. "
+                "Cite the URLs you actually use, don't invent any",
+                results,
+            ))
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+    try:
+        knowledge = _project_knowledge_block(conv.project_id, new_text)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        knowledge = ""
     if knowledge:
         extra_blocks.append((
             "Reference material attached to this project - use it where relevant",
