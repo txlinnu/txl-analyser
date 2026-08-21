@@ -30,6 +30,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import requests
+
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE_ROOT = Path(os.environ.get("CODE_WORKSPACE", BASE_DIR / "workspace")).resolve()
 WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -87,8 +89,10 @@ MAX_TOOL_STEPS = 8       # per user turn - guards against runaway tool-call loop
 COMMAND_TIMEOUT = 60     # seconds
 MAX_OUTPUT_CHARS = 4000
 MAX_READ_CHARS = 20000
+FETCH_TIMEOUT = 15       # seconds
+MAX_FETCH_CHARS = 8000
 
-READ_ONLY_TOOLS = {"list_directory", "read_file"}
+READ_ONLY_TOOLS = {"list_directory", "read_file", "fetch_url"}
 APPROVAL_TOOLS = {"write_file", "run_command"}
 
 TOOLS = [
@@ -115,6 +119,24 @@ TOOLS = [
                 "type": "object",
                 "properties": {"path": {"type": "string", "description": "Path relative to the workspace root."}},
                 "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_url",
+            "description": (
+                "Fetch a URL over HTTP(S) and return its response - e.g. to check "
+                "whether a locally running dev server is responding, or to read a "
+                "webpage. Works for localhost/127.0.0.1 URLs (like the app you're "
+                "currently building) as well as the public internet. Read-only, "
+                "runs immediately without approval."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "description": "The full URL, including http:// or https://."}},
+                "required": ["url"],
             },
         },
     },
@@ -160,6 +182,10 @@ touch anything outside that folder.
 
 - Use list_directory and read_file to look around before making changes \
 - don't guess at file contents.
+- Use fetch_url to check whether something you built (or anything else, \
+including localhost/127.0.0.1 URLs) is actually responding, and what it \
+returns - don't say you "can't access the browser" or guess at what a \
+running server does, actually fetch it.
 - Use write_file to create or edit files, and run_command for terminal \
 commands (installing packages, running scripts/tests, git, etc.).
 - write_file and run_command both require the user's explicit approval \
@@ -240,12 +266,34 @@ def _tool_read_file(args: dict, workspace_root: Path) -> str:
     return text
 
 
+def _tool_fetch_url(args: dict) -> str:
+    url = (args.get("url") or "").strip()
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        return "Error: url must start with http:// or https://."
+    try:
+        resp = requests.get(url, timeout=FETCH_TIMEOUT, headers={"User-Agent": "TXL-Cloud-CodeMode/1.0"})
+    except requests.exceptions.ConnectionError as e:
+        return f"Error: could not connect to {url} - is anything actually listening there? ({e})"
+    except requests.exceptions.Timeout:
+        return f"Error: {url} took too long to respond (timed out after {FETCH_TIMEOUT}s)."
+    except Exception as e:
+        return f"Error fetching {url}: {e}"
+
+    content_type = resp.headers.get("Content-Type", "unknown")
+    body = resp.text
+    if len(body) > MAX_FETCH_CHARS:
+        body = body[:MAX_FETCH_CHARS] + f"\n... (truncated, {len(body):,} characters total)"
+    return f"HTTP {resp.status_code} ({content_type})\n\n{body}"
+
+
 def execute_tool(name: str, args: dict, workspace_root: Path) -> str:
     """Runs a read-only tool immediately. Never call this for write_file/run_command."""
     if name == "list_directory":
         return _tool_list_directory(args, workspace_root)
     if name == "read_file":
         return _tool_read_file(args, workspace_root)
+    if name == "fetch_url":
+        return _tool_fetch_url(args)
     return f"Error: unknown tool '{name}'."
 
 
