@@ -1241,6 +1241,9 @@ def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = 
             "end. Still be careful: this is real, unreviewed execution."
         )
 
+    last_call_signature = None
+    repeat_count = 0
+
     for _ in range(code_agent.MAX_TOOL_STEPS):
         full_messages = [{"role": "system", "content": system}] + _api_messages_for(conv_id)
         try:
@@ -1253,6 +1256,24 @@ def _run_code_loop(conv_id: int, model: str, workspace_root, autonomous: bool = 
         if tool_calls:
             call = tool_calls[0]
             name, args, call_id = call["name"], call["arguments"], call["id"]
+
+            # A smaller model can get stuck redoing the exact same action
+            # (e.g. rewriting the same file repeatedly) instead of noticing
+            # it's done and answering - burning through every remaining
+            # step on nothing useful. Break out early instead of letting
+            # that run all the way to the max-steps error.
+            signature = (name, json.dumps(args, sort_keys=True))
+            repeat_count = repeat_count + 1 if signature == last_call_signature else 0
+            last_call_signature = signature
+            if repeat_count >= 2:
+                _add_tool_call_message(conv_id, call_id, name, args)
+                _add_tool_result_message(
+                    conv_id, call_id, name,
+                    "Stopped: you called this exact action 3 times in a row without making "
+                    "progress. Explain to the user what happened instead of repeating it again.",
+                )
+                yield f"data: {json.dumps({'action': {'kind': name, 'args': args, 'result': '(repeated action - stopped)'}})}\n\n"
+                continue
 
             if name in code_agent.READ_ONLY_TOOLS:
                 try:
@@ -1373,6 +1394,16 @@ def code_set_workspace(conv_id):
     conv.workspace_path = str(path)
     models.db.session.commit()
     return jsonify({"ok": True, "path": str(path)})
+
+
+@app.route("/code/browse-folders", methods=["GET"])
+def code_browse_folders():
+    if not code_agent.ALLOW_CUSTOM_WORKSPACE:
+        return jsonify({"error": "Custom project folders aren't enabled on this deployment."}), 403
+    try:
+        return jsonify({"ok": True, **code_agent.browse_folders(request.args.get("path"))})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/code/<int:conv_id>/autonomous", methods=["POST"])

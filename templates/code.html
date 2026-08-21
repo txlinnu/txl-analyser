@@ -324,6 +324,51 @@
   .quoted-reply .text { flex: 1; min-width: 0; max-height: 60px; overflow-y: auto; white-space: pre-wrap; }
   .quoted-reply button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; flex-shrink: 0; }
   .quoted-reply button:hover { color: var(--danger-text); }
+
+  .modal-scrim {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 30;
+  }
+  .modal-scrim.open { display: block; }
+  .modal {
+    display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(460px, 90vw); background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: var(--shadow); z-index: 31;
+  }
+  .modal.open { display: block; }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+  }
+  .modal-header h3 { margin: 0; font-size: 1rem; }
+  .modal-header button {
+    border: none; background: none; color: var(--muted); font-size: 1rem; cursor: pointer;
+    width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-header button:hover { background: var(--main-bg); color: var(--text); }
+  .modal-body { padding: 14px 16px 16px; }
+  .folder-browser-path {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 0.8rem;
+    color: var(--muted); word-break: break-all; margin-bottom: 10px; min-height: 1.2em;
+  }
+  .folder-browser-list {
+    max-height: 300px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 14px;
+  }
+  .folder-browser-item {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer;
+    font-size: 0.86rem; border-bottom: 1px solid var(--border);
+  }
+  .folder-browser-item:last-child { border-bottom: none; }
+  .folder-browser-item:hover { background: var(--main-bg); }
+  .folder-browser-item.up { color: var(--muted); }
+  .folder-browser-empty { padding: 16px; text-align: center; color: var(--muted); font-size: 0.82rem; }
+  .folder-browser-actions { display: flex; gap: 8px; }
+  .folder-browser-actions button {
+    flex: 1; padding: 9px; border-radius: 8px; font-weight: 600; font-size: 0.86rem; cursor: pointer;
+  }
+  .folder-browser-actions .select-btn { border: none; background: var(--accent); color: #fff; }
+  .folder-browser-actions .select-btn:hover { background: var(--accent-hover); }
+  .folder-browser-actions .cancel-btn { border: 1px solid var(--border); background: var(--card); color: var(--text); }
 </style>
 </head>
 <body>
@@ -460,6 +505,22 @@
       <p class="footnote">File writes and commands only run after you click Approve. Nothing outside the workspace folder is reachable.</p>
     </div>
   </main>
+</div>
+
+<div class="modal-scrim" id="folder-browser-scrim"></div>
+<div class="modal" id="folder-browser-modal">
+  <div class="modal-header">
+    <h3>Choose a folder</h3>
+    <button type="button" id="folder-browser-close-btn" aria-label="Close">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="folder-browser-path" id="folder-browser-path"></div>
+    <div class="folder-browser-list" id="folder-browser-list"></div>
+    <div class="folder-browser-actions">
+      <button type="button" class="cancel-btn" id="folder-browser-cancel-btn">Cancel</button>
+      <button type="button" class="select-btn" id="folder-browser-select-btn">Select this folder</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -872,33 +933,89 @@ inputEl.addEventListener('keydown', (e) => {
 
 newChatBtn.addEventListener('click', () => { window.location.href = '/code'; });
 
+/* ---------- Folder browser modal ---------- */
 const workspaceChangeBtn = document.getElementById('workspace-change-btn');
-if (workspaceChangeBtn) {
-  workspaceChangeBtn.addEventListener('click', async () => {
-    const current = document.getElementById('workspace-path').textContent;
-    const input = window.prompt('Full folder path (e.g. C:\\Projects\\my-app):', current);
-    if (input === null) return;
-    const path = input.trim();
-    if (!path) return;
-    if (currentConvId) {
-      try {
-        const resp = await fetch('/code/' + currentConvId + '/workspace', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) { addErrorNote(data.error || 'Could not change the folder.'); return; }
-        document.getElementById('workspace-path').textContent = data.path;
-      } catch (err) {
-        addErrorNote(err.message || 'Could not change the folder.');
-      }
-    } else {
-      pendingWorkspacePath = path;
-      document.getElementById('workspace-path').textContent = path + ' (will be used once you send a message)';
-    }
-  });
+const folderBrowserScrim = document.getElementById('folder-browser-scrim');
+const folderBrowserModal = document.getElementById('folder-browser-modal');
+const folderBrowserPathEl = document.getElementById('folder-browser-path');
+const folderBrowserListEl = document.getElementById('folder-browser-list');
+const folderBrowserSelectBtn = document.getElementById('folder-browser-select-btn');
+let folderBrowserCurrentPath = '';
+
+function openFolderBrowser() {
+  folderBrowserScrim.classList.add('open');
+  folderBrowserModal.classList.add('open');
+  loadFolderBrowser(null);
 }
+
+function closeFolderBrowser() {
+  folderBrowserScrim.classList.remove('open');
+  folderBrowserModal.classList.remove('open');
+}
+
+async function loadFolderBrowser(path) {
+  folderBrowserListEl.innerHTML = '<div class="folder-browser-empty">Loading…</div>';
+  try {
+    const url = '/code/browse-folders' + (path ? '?path=' + encodeURIComponent(path) : '');
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok) {
+      folderBrowserListEl.innerHTML = '<div class="folder-browser-empty"></div>';
+      folderBrowserListEl.querySelector('.folder-browser-empty').textContent = data.error || 'Could not list that folder.';
+      return;
+    }
+    folderBrowserCurrentPath = data.path;
+    folderBrowserPathEl.textContent = data.path || 'Choose a drive';
+    folderBrowserSelectBtn.disabled = !data.path;
+
+    const rows = [];
+    if (data.parent !== null) {
+      rows.push('<div class="folder-browser-item up" data-path="' + escapeHtml(data.parent) + '">⬆ Up</div>');
+    }
+    if (!data.folders.length) {
+      rows.push('<div class="folder-browser-empty">No subfolders here</div>');
+    } else {
+      data.folders.forEach(f => {
+        rows.push('<div class="folder-browser-item" data-path="' + escapeHtml(f.path) + '">📁 ' + escapeHtml(f.name) + '</div>');
+      });
+    }
+    folderBrowserListEl.innerHTML = rows.join('');
+    [...folderBrowserListEl.querySelectorAll('.folder-browser-item[data-path]')].forEach((el) => {
+      el.addEventListener('click', () => loadFolderBrowser(el.dataset.path));
+    });
+  } catch (err) {
+    folderBrowserListEl.innerHTML = '<div class="folder-browser-empty">Could not load folders.</div>';
+  }
+}
+
+if (workspaceChangeBtn) {
+  workspaceChangeBtn.addEventListener('click', openFolderBrowser);
+}
+folderBrowserScrim.addEventListener('click', closeFolderBrowser);
+document.getElementById('folder-browser-close-btn').addEventListener('click', closeFolderBrowser);
+document.getElementById('folder-browser-cancel-btn').addEventListener('click', closeFolderBrowser);
+folderBrowserSelectBtn.addEventListener('click', async () => {
+  const path = folderBrowserCurrentPath;
+  if (!path) return;
+  if (currentConvId) {
+    try {
+      const resp = await fetch('/code/' + currentConvId + '/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { addErrorNote(data.error || 'Could not change the folder.'); return; }
+      document.getElementById('workspace-path').textContent = data.path;
+    } catch (err) {
+      addErrorNote(err.message || 'Could not change the folder.');
+    }
+  } else {
+    pendingWorkspacePath = path;
+    document.getElementById('workspace-path').textContent = path + ' (will be used once you send a message)';
+  }
+  closeFolderBrowser();
+});
 
 autonomousToggle.addEventListener('change', async () => {
   if (!currentConvId) return; // no active session yet - picked up on the first /code/send instead

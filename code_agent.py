@@ -27,6 +27,7 @@ account's files/commands can never see or touch another's.
 import difflib
 import os
 import re
+import string
 import subprocess
 from pathlib import Path
 
@@ -84,6 +85,47 @@ def validate_custom_workspace(raw_path: str) -> Path:
         raise ValueError(f"'{raw_path}' exists but isn't a folder.")
     path.mkdir(parents=True, exist_ok=True)
     return path.resolve()
+
+
+def _list_drives() -> list:
+    """Windows: available drive letters. Unix: just root."""
+    if os.name == "nt":
+        return [f"{letter}:\\" for letter in string.ascii_uppercase if Path(f"{letter}:\\").exists()]
+    return ["/"]
+
+
+def browse_folders(path: str = None) -> dict:
+    """Lists subfolders of `path`, for the custom-workspace folder-picker UI.
+    path=None/"" means the top level (drives on Windows, / on Unix). Returns
+    {"path", "parent", "folders": [{"name", "path"}, ...]} - "parent" is ""
+    for the top level, None only never (there's always somewhere to go up
+    to, down to the top level itself)."""
+    if not ALLOW_CUSTOM_WORKSPACE:
+        raise ValueError("Custom project folders aren't enabled on this deployment.")
+    if not path:
+        drives = _list_drives()
+        return {"path": "", "parent": None, "folders": [{"name": d, "path": d} for d in drives]}
+
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        raise ValueError("Invalid path.")
+    if not p.exists() or not p.is_dir():
+        raise ValueError(f"'{path}' doesn't exist or isn't a folder.")
+    p = p.resolve()
+
+    _hidden = {"$recycle.bin", "system volume information"}
+    try:
+        entries = sorted(
+            (e for e in p.iterdir() if e.is_dir() and not e.name.startswith(".") and e.name.lower() not in _hidden),
+            key=lambda e: e.name.lower(),
+        )
+    except PermissionError:
+        entries = []
+    folders = [{"name": e.name, "path": str(e)} for e in entries]
+    is_drive_root = os.name == "nt" and p.parent == p
+    parent = "" if is_drive_root else str(p.parent)
+    return {"path": str(p), "parent": parent, "folders": folders}
+
 
 MAX_TOOL_STEPS = 8       # per user turn - guards against runaway tool-call loops
 COMMAND_TIMEOUT = 60     # seconds
