@@ -1014,6 +1014,8 @@
       <label>Backend</label>
       <div class="setting-value">{{ header_badge }}</div>
     </div>
+    <button class="approve-btn-like" id="manage-memory-btn" type="button"
+            style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-weight:600;cursor:pointer;margin-bottom:12px;">🧠 Manage memory</button>
     <button class="danger-btn" id="clear-all-btn" type="button">Clear all chats on this browser</button>
 
     <div id="delete-account-section">
@@ -1064,6 +1066,21 @@
     <div class="project-files-list" id="project-files-list"></div>
     <button class="approve-btn-like" id="project-files-add-btn" type="button" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-weight:600;cursor:pointer;">＋ Add file</button>
     <input type="file" id="project-file-input" accept=".txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.yml,.yaml,.log" style="display:none;">
+  </div>
+</div>
+
+<div class="modal-scrim" id="memory-scrim"></div>
+<div class="modal" id="memory-modal">
+  <div class="modal-header">
+    <h3>🧠 Memory</h3>
+    <button class="panel-btn icon" id="memory-close-btn" type="button" aria-label="Close">✕</button>
+  </div>
+  <div class="modal-body">
+    <p style="font-size:0.78rem;color:var(--muted);margin:0 0 4px;">
+      Durable facts TXL Cloud has picked up about you from past chats, used to make new conversations feel continuous. Remove anything you don't want kept.
+    </p>
+    <div class="project-files-list" id="memory-list"></div>
+    <button class="danger-btn" id="memory-clear-btn" type="button">Clear all memory</button>
   </div>
 </div>
 
@@ -1769,6 +1786,54 @@ document.querySelectorAll('.project-files-btn').forEach(btn => {
     const name = group.querySelector('.project-name').textContent.replace('📁 ', '');
     openProjectFiles(group.dataset.projectId, name);
   });
+});
+
+/* ---------- Memory ---------- */
+const memoryModal = document.getElementById('memory-modal');
+const memoryScrim = document.getElementById('memory-scrim');
+const memoryList = document.getElementById('memory-list');
+const manageMemoryBtn = document.getElementById('manage-memory-btn');
+
+async function refreshMemory() {
+  const resp = await fetch('/memory');
+  const data = await resp.json();
+  const memories = (data.memories || []);
+  if (!memories.length) {
+    memoryList.innerHTML = '<p class="project-files-empty">Nothing remembered yet - it builds up as you chat.</p>';
+    return;
+  }
+  memoryList.innerHTML = memories.map(m =>
+    '<div class="project-file-row" data-memory-id="' + m.id + '">' +
+      '<span class="name">' + escapeHtml(m.content) + '</span>' +
+      '<button class="project-file-remove" type="button" title="Forget this">✕</button>' +
+    '</div>'
+  ).join('');
+  memoryList.querySelectorAll('.project-file-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('.project-file-row');
+      await fetch('/memory/' + row.dataset.memoryId + '/delete', { method: 'POST' });
+      refreshMemory();
+    });
+  });
+}
+
+function openMemory() {
+  closeSettings();
+  memoryModal.classList.add('open');
+  memoryScrim.classList.add('open');
+  refreshMemory();
+}
+function closeMemory() {
+  memoryModal.classList.remove('open');
+  memoryScrim.classList.remove('open');
+}
+manageMemoryBtn.addEventListener('click', openMemory);
+document.getElementById('memory-close-btn').addEventListener('click', closeMemory);
+memoryScrim.addEventListener('click', closeMemory);
+document.getElementById('memory-clear-btn').addEventListener('click', async () => {
+  if (!confirm('Forget everything TXL Cloud remembers about you?')) return;
+  await fetch('/memory/clear', { method: 'POST' });
+  refreshMemory();
 });
 
 projectFilesAddBtn.addEventListener('click', () => projectFileInput.click());

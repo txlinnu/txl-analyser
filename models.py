@@ -89,6 +89,20 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class Memory(db.Model):
+    """A durable fact about a user (name, role, ongoing project, preference,
+    goal), extracted from their own messages - see chat_app.py's
+    _extract_memory(). Injected into every new chat's context (see
+    _user_memory_block()) so it persists across separate conversations,
+    unlike a conversation's own history. User-visible/deletable via the
+    Memory modal in Settings."""
+    __tablename__ = "memories"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    content = db.Column(db.String(300), nullable=False)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+
 class Project(db.Model):
     __tablename__ = "projects"
     id = db.Column(db.Integer, primary_key=True)

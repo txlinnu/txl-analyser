@@ -184,6 +184,64 @@ def _get_second_opinion(history, primary_model, custom_instructions) -> str:
     return "".join(agent.stream_reply(history, alt_model, custom_instructions=custom_instructions))
 
 
+MAX_MEMORIES_PER_USER = 60
+MEMORY_INJECT_LIMIT = 25
+
+
+def _user_memory_block(user_id: int) -> str:
+    """The user's most recent durable facts (see _extract_memory), formatted
+    for folding into a chat's context - same extra_blocks mechanism as
+    project knowledge files."""
+    rows = (
+        models.Memory.query.filter_by(user_id=user_id)
+        .order_by(models.Memory.id.desc())
+        .limit(MEMORY_INJECT_LIMIT)
+        .all()
+    )
+    if not rows:
+        return ""
+    return "\n".join(f"- {m.content}" for m in reversed(rows))
+
+
+def _extract_memory(user_id: int, message: str, model: str) -> None:
+    """Best-effort: ask the fast model whether this message reveals a durable
+    fact about the user (name, role, ongoing project, tech stack, a stated
+    preference/goal) worth remembering in later, unrelated conversations -
+    not just the topic of this one message. Saves it if so; a no-op on
+    failure or when there's nothing worth keeping, and never raises - the
+    caller runs this after the reply is already sent to the user."""
+    if len(message) < 15:
+        return
+    prompt = (
+        "Below is one message a user sent an AI assistant. Does it reveal a "
+        "durable fact about the USER worth remembering in later, unrelated "
+        "conversations - e.g. their name, role/job, an ongoing project, their "
+        "tech stack, a stated preference or goal? This is about the user "
+        "themselves, not the topic of this one message.\n\n"
+        "If yes, reply with ONLY that fact as one short plain sentence (under "
+        "15 words), nothing else. If no, reply with exactly: NONE\n\n"
+        f"Message:\n{message[:2000]}"
+    )
+    try:
+        fact = "".join(agent.stream_reply([{"role": "user", "content": prompt}], model)).strip()
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        return
+    fact = fact.strip().strip('"')
+    if not fact or fact.upper().startswith("NONE") or len(fact) > 300:
+        return
+    existing = {m.content.lower() for m in models.Memory.query.filter_by(user_id=user_id).all()}
+    if fact.lower() in existing:
+        return
+    models.db.session.add(models.Memory(user_id=user_id, content=fact))
+    models.db.session.commit()
+    overflow = models.Memory.query.filter_by(user_id=user_id).count() - MAX_MEMORIES_PER_USER
+    if overflow > 0:
+        for m in models.Memory.query.filter_by(user_id=user_id).order_by(models.Memory.id).limit(overflow).all():
+            models.db.session.delete(m)
+        models.db.session.commit()
+
+
 def deep_check_reply(history, model, custom_instructions=None, image_data_url=None):
     """
     Draft -> verify any arithmetic -> get a second, independent model's
@@ -787,6 +845,20 @@ def chat_send():
             knowledge,
         ))
 
+    # What's remembered about this user from earlier, separate conversations
+    # (see _extract_memory) - folded in the same way as project knowledge.
+    try:
+        mem_block = _user_memory_block(user.id)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        mem_block = ""
+    if mem_block:
+        extra_blocks.append((
+            "What you remember about this user from earlier conversations - "
+            "weave it in naturally where relevant, don't just recite it back",
+            mem_block,
+        ))
+
     if extra_blocks:
         content = message
         for label, block in extra_blocks:
@@ -821,6 +893,12 @@ def chat_send():
         html_out = render_message(full_reply)
         created_at = assistant_msg.created_at.isoformat() + "Z"
         yield f"data: {json.dumps({'done': True, 'html': html_out, 'created_at': created_at})}\n\n"
+        # After the reply is already on the user's screen - never worth
+        # delaying it for this. Best-effort, silently skipped on failure.
+        try:
+            _extract_memory(user.id, message, FAST_MODEL)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
@@ -1065,6 +1143,31 @@ def project_file_delete(project_id, file_id):
     if pf:
         models.db.session.delete(pf)
         models.db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/memory", methods=["GET"])
+def memory_list():
+    rows = models.Memory.query.filter_by(user_id=g.user.id).order_by(models.Memory.id.desc()).all()
+    return jsonify({
+        "ok": True,
+        "memories": [{"id": m.id, "content": m.content, "created_at": m.created_at.isoformat() + "Z"} for m in rows],
+    })
+
+
+@app.route("/memory/<int:memory_id>/delete", methods=["POST"])
+def memory_delete(memory_id):
+    m = models.Memory.query.filter_by(id=memory_id, user_id=g.user.id).first()
+    if m:
+        models.db.session.delete(m)
+        models.db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/memory/clear", methods=["POST"])
+def memory_clear():
+    models.Memory.query.filter_by(user_id=g.user.id).delete()
+    models.db.session.commit()
     return jsonify({"ok": True})
 
 
