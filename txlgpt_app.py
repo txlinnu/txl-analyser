@@ -36,6 +36,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import markdown as md
@@ -294,12 +295,30 @@ SITE_PASSWORD = os.environ.get("SITE_PASSWORD")
 # stays open to anyone who reaches it, same as before.
 SIGNUP_INVITE_CODE = os.environ.get("SIGNUP_INVITE_CODE")
 
-PUBLIC_ENDPOINTS = {"login", "signup", "static", "forgot_password", "reset_password"}
+@app.route("/sw.js")
+def service_worker():
+    # Served from the root (not /static/txlgpt-sw.js) so its default scope
+    # covers the whole app, not just /static/ - required for it to control
+    # every page. A plain Response (not send_from_directory's conditional/
+    # caching path) avoids duplicate response headers that make browsers
+    # reject the SW fetch.
+    sw_path = Path(app.static_folder) / "txlgpt-sw.js"
+    return Response(sw_path.read_text(encoding="utf-8"), mimetype="application/javascript")
+
+
+PUBLIC_ENDPOINTS = {"login", "signup", "static", "forgot_password", "reset_password", "service_worker"}
+
+# Exempt from the SITE_PASSWORD gate below: the PWA manifest, icons, and
+# service worker have to be fetchable with no credentials at all, or
+# Chrome's installability check silently fails and "Install app" never
+# shows up - a site-wide Basic Auth prompt isn't something that check
+# will push through on its own.
+_PWA_PUBLIC_ENDPOINTS = {"static", "service_worker"}
 
 
 @app.before_request
 def require_password():
-    if not SITE_PASSWORD:
+    if not SITE_PASSWORD or request.endpoint in _PWA_PUBLIC_ENDPOINTS:
         return None
     auth = request.authorization
     if not auth or auth.password != SITE_PASSWORD:

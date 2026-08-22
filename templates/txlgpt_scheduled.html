@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Scheduled - Txl GPT</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22%2310A37F%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23fff%22 font-family=%22sans-serif%22 font-weight=%22700%22>T</text></svg>">
+<link rel="manifest" href="/static/txlgpt-manifest.json">
+<meta name="theme-color" content="#10A37F">
+<link rel="apple-touch-icon" href="/static/icons/txlgpt-icon-192.png">
+<script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js')); }</script>
 <style>
   :root {
     --bg: #212121; --panel: #2a2a2a; --bubble: #2f2f2f; --text: #ececec; --muted: #9b9b9b;
@@ -63,6 +67,11 @@
   .task-actions button:hover { background: var(--border); }
   .task-actions button.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
   .empty { color: var(--muted); font-size: 0.86rem; text-align: center; padding: 40px 0; }
+
+  /* iOS Safari auto-zooms the whole page when a focused input's font-size is under 16px - keep every text input at least 16px on mobile so tapping the composer (or any form field) doesn't trigger an unwanted zoom in/out. */
+  @media (max-width: 768px) {
+    input, textarea, select { font-size: 16px !important; }
+  }
 </style>
 </head>
 <body>
