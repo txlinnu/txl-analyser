@@ -124,7 +124,26 @@ def _poll_loop():
         time.sleep(10 if fast else 30)
 
 
-threading.Thread(target=_poll_loop, daemon=True).start()
+_poll_started = False
+_poll_start_lock = threading.Lock()
+
+
+def _ensure_poll_started():
+    # Started lazily on first request (not at import time) so it reliably
+    # runs inside the actual worker process under gunicorn, regardless of
+    # whether the app was imported pre- or post-fork.
+    global _poll_started
+    if _poll_started:
+        return
+    with _poll_start_lock:
+        if not _poll_started:
+            threading.Thread(target=_poll_loop, daemon=True).start()
+            _poll_started = True
+
+
+@app.before_request
+def _start_poll():
+    _ensure_poll_started()
 
 
 def snapshot():
