@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheduled - Txl GPT</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22%2310A37F%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23fff%22 font-family=%22sans-serif%22 font-weight=%22700%22>T</text></svg>">
+<style>
+  :root {
+    --bg: #212121; --panel: #2a2a2a; --bubble: #2f2f2f; --text: #ececec; --muted: #9b9b9b;
+    --border: #3a3a3a; --accent: #10A37F; --accent-hover: #189b78;
+    --danger-bg: #3a2422; --danger-text: #ff9e82; --danger-border: #5a3428;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .topbar .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .topbar .mark {
+    width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.86rem; margin: 0 0 24px; }
+  .new-task-form {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 24px;
+  }
+  .new-task-form h2 { font-size: 0.95rem; margin: 0 0 12px; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  textarea, input, select {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px;
+    background: var(--bg); color: var(--text); font-size: 0.88rem; outline: none; margin-bottom: 14px; font-family: inherit;
+  }
+  textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  .schedule-fields { display: none; }
+  .schedule-fields.show { display: block; }
+  .create-btn {
+    border: none; background: var(--accent); color: #fff; padding: 9px 18px; border-radius: 9px;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+  }
+  .create-btn:hover { background: var(--accent-hover); }
+  .error { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 8px; padding: 9px 12px; font-size: 0.82rem; margin-bottom: 14px; display: none; }
+  .error.show { display: block; }
+  .task-list { display: flex; flex-direction: column; gap: 10px; }
+  .task {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .task.disabled { opacity: 0.55; }
+  .task-prompt { font-size: 0.9rem; margin: 0 0 6px; white-space: pre-wrap; word-wrap: break-word; }
+  .task-meta { font-size: 0.76rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .task-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .task-actions button {
+    border: none; background: var(--bubble); color: var(--text); padding: 6px 10px; border-radius: 7px;
+    font-size: 0.78rem; cursor: pointer;
+  }
+  .task-actions button:hover { background: var(--border); }
+  .task-actions button.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
+  .empty { color: var(--muted); font-size: 0.86rem; text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/" style="display:flex;align-items:center;gap:8px;">
+    <span class="mark">T</span>
+  </a>
+  <a href="/">← Back to chat</a>
+</div>
+<div class="wrap">
+  <h1>Scheduled tasks</h1>
+  <p class="sub">Prompts that run automatically, once or on a repeating schedule, while this app is running. Results land in a new conversation.</p>
+
+  <div class="error" id="form-error"></div>
+
+  <div class="new-task-form">
+    <h2>New scheduled task</h2>
+    <label for="task-prompt">Prompt</label>
+    <textarea id="task-prompt" placeholder="e.g. Summarize today's top AI news in 5 bullet points" maxlength="4000"></textarea>
+
+    <label for="schedule-type">Schedule</label>
+    <select id="schedule-type">
+      <option value="once">Once, at a specific date and time</option>
+      <option value="daily">Every day, at a specific time</option>
+      <option value="interval">Every N minutes</option>
+    </select>
+
+    <div class="schedule-fields show" id="fields-once">
+      <label for="run-at">Date and time</label>
+      <input type="datetime-local" id="run-at">
+    </div>
+    <div class="schedule-fields" id="fields-daily">
+      <label for="run-at-time">Time (UTC)</label>
+      <input type="time" id="run-at-time" value="09:00">
+    </div>
+    <div class="schedule-fields" id="fields-interval">
+      <label for="interval-minutes">Every how many minutes</label>
+      <input type="number" id="interval-minutes" min="5" value="60">
+    </div>
+
+    <button class="create-btn" id="create-task-btn" type="button">Schedule it</button>
+  </div>
+
+  <div class="task-list" id="task-list">
+    {% for t in tasks %}
+    <div class="task {{ 'disabled' if not t.enabled else '' }}" data-id="{{ t.id }}">
+      <div>
+        <p class="task-prompt">{{ t.prompt }}</p>
+        <div class="task-meta">
+          {% if t.schedule_type == 'once' %}<span>🕐 Once at {{ t.next_run.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+          {% elif t.schedule_type == 'daily' %}<span>🔁 Daily at {{ t.run_at_time }} UTC</span>
+          {% else %}<span>🔁 Every {{ t.interval_minutes }} min</span>{% endif %}
+          <span>Next: {{ t.next_run.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+          {% if t.last_run %}<span>Last ran: {{ t.last_run.strftime('%Y-%m-%d %H:%M') }} UTC</span>{% endif %}
+          {% if t.conversation_id %}<a href="/?c={{ t.conversation_id }}">View results →</a>{% endif %}
+        </div>
+      </div>
+      <div class="task-actions">
+        <button class="toggle-btn" data-id="{{ t.id }}">{{ 'Disable' if t.enabled else 'Enable' }}</button>
+        <button class="danger delete-btn" data-id="{{ t.id }}">Delete</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty" id="empty-msg">No scheduled tasks yet.</div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+const scheduleType = document.getElementById('schedule-type');
+const formError = document.getElementById('form-error');
+function showFormError(msg) { formError.textContent = msg; formError.classList.add('show'); }
+
+scheduleType.addEventListener('change', () => {
+  document.querySelectorAll('.schedule-fields').forEach(el => el.classList.remove('show'));
+  document.getElementById('fields-' + scheduleType.value).classList.add('show');
+});
+
+document.getElementById('create-task-btn').addEventListener('click', async () => {
+  formError.classList.remove('show');
+  const prompt = document.getElementById('task-prompt').value.trim();
+  if (!prompt) { showFormError('Please enter a prompt.'); return; }
+  const type = scheduleType.value;
+  const body = { prompt, schedule_type: type };
+  if (type === 'once') {
+    const v = document.getElementById('run-at').value;
+    if (!v) { showFormError('Please choose a date and time.'); return; }
+    body.run_at = new Date(v).toISOString();
+  } else if (type === 'daily') {
+    body.run_at_time = document.getElementById('run-at-time').value;
+  } else {
+    body.interval_minutes = parseInt(document.getElementById('interval-minutes').value, 10);
+  }
+  const res = await fetch('/scheduled/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok || !data.ok) { showFormError(data.error || 'Could not schedule that task.'); return; }
+  window.location.reload();
+});
+
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    await fetch(`/scheduled/${btn.dataset.id}/toggle`, { method: 'POST' });
+    window.location.reload();
+  });
+});
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Delete this scheduled task?')) return;
+    await fetch(`/scheduled/${btn.dataset.id}/delete`, { method: 'POST' });
+    window.location.reload();
+  });
+});
+</script>
+</body>
+</html>

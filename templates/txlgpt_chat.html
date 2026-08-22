@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ history[0].text[:40] ~ ' - Txl GPT' if history else 'Txl GPT' }}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22%2310A37F%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23fff%22 font-family=%22sans-serif%22 font-weight=%22700%22>T</text></svg>">
+<style>
+  :root {
+    --bg: #212121; --sidebar: #171717; --panel: #2a2a2a; --bubble: #2f2f2f;
+    --text: #ececec; --muted: #9b9b9b; --border: #3a3a3a; --border-soft: #313131;
+    --accent: #10A37F; --accent-hover: #189b78;
+    --danger-bg: #3a2422; --danger-text: #ff9e82; --danger-border: #5a3428;
+    --code-bg: #1a1a1a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; overflow: hidden;
+  }
+  a { color: var(--accent); }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: 260px; flex-shrink: 0; background: var(--sidebar); display: flex; flex-direction: column;
+    border-right: 1px solid var(--border-soft); height: 100vh;
+  }
+  .sb-top { padding: 12px 12px 4px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem; padding: 6px 4px 14px; }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0;
+  }
+  .new-chat-btn, .nav-btn {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text);
+    font-size: 0.87rem; cursor: pointer; text-align: left; margin-bottom: 6px; text-decoration: none;
+  }
+  .new-chat-btn:hover, .nav-btn:hover { background: var(--panel); }
+  #conv-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .sb-section-label {
+    font-size: 0.72rem; color: var(--muted); font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 12px 10px 6px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .sb-section-label:first-child { padding-top: 6px; }
+  .project-del { border: none; background: none; color: var(--muted); cursor: pointer; opacity: 0; font-size: 0.78rem; padding: 2px 4px; border-radius: 5px; text-transform: none; letter-spacing: normal; }
+  .sb-section-label:hover .project-del { opacity: 1; }
+  .project-del:hover { color: var(--danger-text); background: var(--danger-bg); }
+  .conv-item {
+    display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 10px; border-radius: 8px;
+    cursor: pointer; font-size: 0.85rem; color: var(--text); text-decoration: none;
+    white-space: nowrap; overflow: hidden; position: relative; margin-bottom: 2px;
+  }
+  .conv-item:hover { background: var(--panel); }
+  .conv-item.active { background: var(--panel); }
+  .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; color: inherit; text-decoration: none; }
+  .conv-pin-mark { font-size: 0.7rem; flex-shrink: 0; }
+  .conv-menu-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer; padding: 3px 5px;
+    border-radius: 5px; opacity: 0; flex-shrink: 0; font-size: 0.85rem;
+  }
+  .conv-item:hover .conv-menu-btn { opacity: 1; }
+  .conv-menu-btn:hover { background: var(--border); color: var(--text); }
+  .conv-menu {
+    position: fixed; z-index: 60; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 5px; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none;
+  }
+  .conv-menu.show { display: block; }
+  .conv-menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: none;
+    background: none; color: var(--text); font-size: 0.82rem; cursor: pointer; border-radius: 6px; text-align: left;
+  }
+  .conv-menu button:hover { background: var(--bubble); }
+  .conv-menu button.danger { color: var(--danger-text); }
+  .conv-menu .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .conv-menu .menu-label { padding: 6px 10px 2px; font-size: 0.68rem; color: var(--muted); text-transform: uppercase; }
+  .sb-bottom { padding: 10px 12px; border-top: 1px solid var(--border-soft); }
+  .sb-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sb-email { font-size: 0.8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 0.68rem; color: var(--accent); margin-top: 3px; }
+  .logout-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.78rem;
+    padding: 4px 8px; border-radius: 6px; flex-shrink: 0;
+  }
+  .logout-btn:hover { background: var(--panel); color: var(--text); }
+
+  /* ---------- Modal (Plugins / New project) ---------- */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    width: min(380px, 90vw); background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .modal h2 { font-size: 1rem; margin: 0 0 4px; }
+  .modal .modal-sub { color: var(--muted); font-size: 0.8rem; margin: 0 0 16px; }
+  .plugin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border-soft); }
+  .plugin-row:first-of-type { border-top: none; }
+  .plugin-name { font-size: 0.88rem; font-weight: 600; }
+  .plugin-desc { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; inset: 0; background: var(--border); border-radius: 22px; cursor: pointer; transition: 0.15s;
+  }
+  .switch .slider::before {
+    content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff;
+    border-radius: 50%; transition: 0.15s;
+  }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+  .modal-close-row { margin-top: 16px; text-align: right; }
+  .modal-close-btn {
+    border: none; background: var(--bubble); color: var(--text); padding: 8px 16px; border-radius: 8px;
+    cursor: pointer; font-size: 0.85rem;
+  }
+  .modal-close-btn:hover { background: var(--border); }
+  .modal input[type=text] {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px;
+    background: var(--bg); color: var(--text); font-size: 0.88rem; outline: none; margin-bottom: 12px;
+  }
+  .modal input[type=text]:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .modal-primary-btn {
+    border: none; background: var(--accent); color: #fff; padding: 8px 16px; border-radius: 8px;
+    cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  }
+  .modal-primary-btn:hover { background: var(--accent-hover); }
+
+  /* ---------- Main ---------- */
+  #main { flex: 1; display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+  #messages { flex: 1; overflow-y: auto; }
+  #messages.landing { display: flex; align-items: center; justify-content: center; }
+  .landing-inner { text-align: center; }
+  .landing-inner .mark {
+    width: 56px; height: 56px; border-radius: 14px; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 0 auto 16px;
+  }
+  .landing-inner h1 { font-size: 1.5rem; margin: 0 0 6px; }
+  .landing-inner p { color: var(--muted); font-size: 0.9rem; margin: 0; }
+
+  .msg-list { max-width: 768px; margin: 0 auto; padding: 24px 20px 12px; }
+  .msg { display: flex; gap: 14px; margin-bottom: 26px; align-items: flex-start; }
+  .msg.user { flex-direction: row-reverse; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0; margin-top: 2px;
+  }
+  .msg-col { display: flex; flex-direction: column; min-width: 0; }
+  .msg.user .msg-col { align-items: flex-end; max-width: 82%; }
+  .msg.assistant .msg-col { flex: 1; min-width: 0; max-width: calc(100% - 44px); }
+  .bubble { white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; font-size: 0.95rem; }
+  .msg.user .bubble { background: var(--bubble); border-radius: 18px; padding: 10px 16px; }
+  .msg.assistant .bubble { padding-top: 3px; }
+  .msg-image { max-width: 260px; border-radius: 12px; margin-bottom: 8px; display: block; }
+  .msg-image.generated { max-width: 380px; }
+  .bubble.streaming::after { content: '▍'; animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .bubble p:first-child { margin-top: 0; } .bubble p:last-child { margin-bottom: 0; }
+  .bubble pre { background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; position: relative; }
+  .bubble code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.85rem; }
+  .bubble :not(pre) > code { background: var(--code-bg); padding: 2px 5px; border-radius: 5px; }
+  .code-wrap { position: relative; }
+  .copy-code-btn {
+    position: absolute; top: 8px; right: 8px; font-size: 0.72rem; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer;
+  }
+  .copy-code-btn:hover { color: var(--text); }
+  {{ pygments_css | safe }}
+
+  .msg-actions { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity 0.1s ease; }
+  .msg:hover .msg-actions { opacity: 1; }
+  .msg-actions.always-visible { opacity: 1; }
+  .msg-action {
+    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.72rem;
+    padding: 3px 6px; border-radius: 5px;
+  }
+  .msg-action:hover { background: var(--panel); color: var(--text); }
+
+  /* ---------- Composer ---------- */
+  #composer-wrap { padding: 8px 20px 20px; }
+  #composer {
+    max-width: 768px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 24px; padding: 8px 10px 8px 16px; display: flex; flex-direction: column; gap: 6px;
+  }
+  #composer.image-mode { border-color: var(--accent); }
+  #img-preview-row { display: none; padding: 4px 4px 0; }
+  #img-preview-row.show { display: flex; }
+  .img-preview { position: relative; width: 60px; height: 60px; }
+  .img-preview img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+  .img-preview button {
+    position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+    border: none; background: #000; color: #fff; cursor: pointer; font-size: 0.7rem; line-height: 1;
+  }
+  .composer-row { display: flex; align-items: flex-end; gap: 8px; }
+  #composer textarea {
+    flex: 1; resize: none; border: none; outline: none; background: transparent; color: var(--text);
+    font-size: 0.95rem; font-family: inherit; max-height: 200px; padding: 8px 0; line-height: 1.4;
+  }
+  #composer textarea::placeholder { color: var(--muted); }
+  .icon-btn {
+    border: none; background: none; color: var(--muted); cursor: pointer; width: 34px; height: 34px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;
+  }
+  .icon-btn:hover { background: var(--bubble); color: var(--text); }
+  .icon-btn.active { background: var(--accent); color: #fff; }
+  #model-select {
+    background: transparent; color: var(--muted); border: none; font-size: 0.78rem; cursor: pointer; outline: none; flex-shrink: 0;
+  }
+  #send-btn {
+    width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--text); color: var(--bg);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0;
+  }
+  #send-btn:disabled { opacity: 0.4; cursor: default; }
+  .composer-hint { text-align: center; font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+  .error-banner {
+    max-width: 768px; margin: 0 auto 10px; background: var(--danger-bg); color: var(--danger-text);
+    border: 1px solid var(--danger-border); border-radius: 10px; padding: 10px 14px; font-size: 0.85rem; display: none;
+  }
+  .error-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="sb-top">
+    <div class="brand"><span class="mark">T</span> Txl GPT</div>
+    <button class="new-chat-btn" id="new-chat-btn" type="button">+ New chat</button>
+    <a class="nav-btn" href="/work">💼 Work agent</a>
+    <button class="nav-btn" id="plugins-btn" type="button">🔌 Plugins</button>
+    <a class="nav-btn" href="/gpts">🧩 My GPTs</a>
+    <a class="nav-btn" href="/memory">🧠 Memory</a>
+    <a class="nav-btn" href="/scheduled">🕐 Scheduled</a>
+  </div>
+  <div id="conv-list">
+    {% if pinned %}
+    <div class="sb-section-label">Pinned</div>
+    {% for c in pinned %}
+    <div class="conv-item {{ 'active' if c.active else '' }}" data-id="{{ c.id }}">
+      <a class="conv-title" href="/?c={{ c.id }}"><span class="conv-pin-mark">📌</span> {{ c.title }}</a>
+      <button class="conv-menu-btn" data-id="{{ c.id }}" data-pinned="{{ 'true' if c.pinned else 'false' }}" title="More">⋯</button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% for p in projects %}
+    <div class="sb-section-label">
+      <span>📁 {{ p.name }}</span>
+      <button class="project-del" data-id="{{ p.id }}" title="Delete project">✕</button>
+    </div>
+    {% for c in p.chats %}
+    <div class="conv-item {{ 'active' if c.active else '' }}" data-id="{{ c.id }}">
+      <a class="conv-title" href="/?c={{ c.id }}">{{ c.title }}</a>
+      <button class="conv-menu-btn" data-id="{{ c.id }}" data-pinned="{{ 'true' if c.pinned else 'false' }}" title="More">⋯</button>
+    </div>
+    {% endfor %}
+    {% endfor %}
+
+    {% if ungrouped %}
+    <div class="sb-section-label">Chats</div>
+    {% for c in ungrouped %}
+    <div class="conv-item {{ 'active' if c.active else '' }}" data-id="{{ c.id }}">
+      <a class="conv-title" href="/?c={{ c.id }}">{{ c.title }}</a>
+      <button class="conv-menu-btn" data-id="{{ c.id }}" data-pinned="{{ 'true' if c.pinned else 'false' }}" title="More">⋯</button>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+  <div class="sb-top" style="padding-top:0;">
+    <button class="new-chat-btn" id="new-project-btn" type="button">+ New project</button>
+  </div>
+  <div class="sb-bottom">
+    <div class="sb-user">
+      <div>
+        <div class="sb-email">{{ user_email }}</div>
+        <div class="badge">{{ header_badge }}</div>
+      </div>
+      <form method="POST" action="/logout"><button class="logout-btn" type="submit">Log out</button></form>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="messages" class="{{ 'landing' if not history else '' }}">
+    {% if not history %}
+    <div class="landing-inner">
+      <div class="mark">{{ active_gpt.icon if active_gpt else 'T' }}</div>
+      <h1>{{ active_gpt.name if active_gpt else 'Txl GPT' }}</h1>
+      <p>{{ active_gpt.description if (active_gpt and active_gpt.description) else 'Ask anything to get started.' }}</p>
+      {% if gpts and not active_gpt %}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px;">
+        {% for gpt in gpts %}
+        <a href="/?gpt={{ gpt.id }}" style="display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--border);border-radius:20px;font-size:0.82rem;text-decoration:none;color:var(--text);">{{ gpt.icon }} {{ gpt.name }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="msg-list" id="msg-list">
+      {% for m in history %}
+        {% if m.role == 'user' %}
+          <div class="msg user">
+            <div class="msg-col">
+              {% if m.image_data %}<img class="msg-image" src="{{ m.image_data }}" alt="Attached image">{% endif %}
+              <div class="bubble">{{ m.text }}</div>
+            </div>
+          </div>
+        {% elif m.role == 'assistant' %}
+          <div class="msg assistant">
+            <div class="avatar">T</div>
+            <div class="msg-col">
+              {% if m.image_data %}<img class="msg-image generated" src="{{ m.image_data }}" alt="Generated image">{% endif %}
+              <div class="bubble">{{ m.html | safe }}</div>
+              {% if m.is_last %}
+              <div class="msg-actions always-visible">
+                <button class="msg-action copy-btn" type="button" title="Copy">⧉ Copy</button>
+                <button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>
+              </div>
+              {% else %}
+              <div class="msg-actions">
+                <button class="msg-action copy-btn" type="button" title="Copy">⧉ Copy</button>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div id="composer-wrap">
+    <div class="error-banner" id="error-banner"></div>
+    <div id="composer">
+      <div id="img-preview-row">
+        <div class="img-preview"><img id="img-preview-img" src=""><button id="img-preview-remove" type="button">✕</button></div>
+      </div>
+      <div class="composer-row">
+        <button class="icon-btn" id="attach-btn" type="button" title="Attach image">📎</button>
+        <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+        <button class="icon-btn" id="websearch-btn" type="button" title="Web Search plugin">🌐</button>
+        <button class="icon-btn" id="research-btn" type="button" title="Deep Research (multi-source report)">🔬</button>
+        {% if thinking_available %}
+        <button class="icon-btn" id="thinking-btn" type="button" title="Thinking (more reasoning effort)">🧠</button>
+        {% endif %}
+        {% if image_gen_available %}
+        <button class="icon-btn" id="imagegen-btn" type="button" title="Generate an image">🖼</button>
+        {% endif %}
+        <textarea id="composer-input" rows="1" placeholder="Message Txl GPT..."></textarea>
+        <select id="model-select">
+          {% for value, label in model_choices %}
+          <option value="{{ value }}" {{ 'selected' if value == 'auto' else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button id="send-btn" type="button" title="Send">➤</button>
+      </div>
+    </div>
+    <div class="composer-hint">Txl GPT can make mistakes. Check important info.</div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="plugins-modal">
+  <div class="modal">
+    <h2>Plugins</h2>
+    <p class="modal-sub">Extra capabilities Txl GPT can use while answering.</p>
+    <div class="plugin-row">
+      <div>
+        <div class="plugin-name">🌐 Web Search</div>
+        <div class="plugin-desc">Searches the web for grounding before answering. Same toggle as the composer button.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="websearch-modal-toggle"><span class="slider"></span></label>
+    </div>
+    <div class="plugin-row">
+      <div>
+        <div class="plugin-name">🔬 Deep Research</div>
+        <div class="plugin-desc">Splits your question into angles, searches each with more sources, and writes a structured report. Overrides Web Search when both are on.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="research-modal-toggle"><span class="slider"></span></label>
+    </div>
+    {% if image_gen_available %}
+    <div class="plugin-row">
+      <div>
+        <div class="plugin-name">🖼 Image Generation</div>
+        <div class="plugin-desc">Built in - use the 🖼 button in the composer to generate an image instead of chatting.</div>
+      </div>
+      <span style="font-size:0.75rem;color:var(--accent);">Ready</span>
+    </div>
+    {% endif %}
+    <div class="modal-close-row"><button class="modal-close-btn" id="plugins-close">Done</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="project-modal">
+  <div class="modal">
+    <h2>New project</h2>
+    <p class="modal-sub">Group related chats together.</p>
+    <input type="text" id="project-name-input" placeholder="Project name" maxlength="120">
+    <div class="modal-actions">
+      <button class="modal-close-btn" id="project-cancel">Cancel</button>
+      <button class="modal-primary-btn" id="project-create">Create</button>
+    </div>
+  </div>
+</div>
+
+<div class="conv-menu" id="conv-menu">
+  <button id="menu-pin-btn" type="button"></button>
+  <div class="menu-sep"></div>
+  <div class="menu-label">Move to project</div>
+  <div id="menu-projects"></div>
+  <div class="menu-sep"></div>
+  <button class="danger" id="menu-delete-btn" type="button">🗑 Delete</button>
+</div>
+
+<script>
+const PROJECTS = {{ projects | tojson }};
+const messagesEl = document.getElementById('messages');
+const composerInput = document.getElementById('composer-input');
+const sendBtn = document.getElementById('send-btn');
+const modelSelect = document.getElementById('model-select');
+const errorBanner = document.getElementById('error-banner');
+const fileInput = document.getElementById('file-input');
+const attachBtn = document.getElementById('attach-btn');
+const imgPreviewRow = document.getElementById('img-preview-row');
+const imgPreviewImg = document.getElementById('img-preview-img');
+const imgPreviewRemove = document.getElementById('img-preview-remove');
+const websearchBtn = document.getElementById('websearch-btn');
+const researchBtn = document.getElementById('research-btn');
+const thinkingBtn = document.getElementById('thinking-btn');
+const imagegenBtn = document.getElementById('imagegen-btn');
+const composerEl = document.getElementById('composer');
+
+let activeConvId = {{ active_id or 'null' }};
+let activeGptId = {{ active_gpt.id if active_gpt else 'null' }};
+let pendingImage = null;
+let isStreaming = false;
+let webSearchOn = localStorage.getItem('txlgpt-websearch') === '1';
+let researchOn = localStorage.getItem('txlgpt-research') === '1';
+let thinkingOn = localStorage.getItem('txlgpt-thinking') === '1';
+let imageGenMode = false;
+
+function showError(msg) {
+  errorBanner.textContent = msg;
+  errorBanner.classList.add('show');
+  setTimeout(() => errorBanner.classList.remove('show'), 6000);
+}
+
+function autoResize() {
+  composerInput.style.height = 'auto';
+  composerInput.style.height = Math.min(composerInput.scrollHeight, 200) + 'px';
+}
+composerInput.addEventListener('input', autoResize);
+composerInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+function attachImageFile(file) {
+  if (!file) return;
+  if (imageGenMode) return; // image-gen mode takes a text prompt only, not a reference image
+  if (file.size > 6 * 1024 * 1024) { showError('That image is too large (max ~6 MB).'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingImage = reader.result;
+    imgPreviewImg.src = pendingImage;
+    imgPreviewRow.classList.add('show');
+  };
+  reader.readAsDataURL(file);
+}
+
+attachBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  attachImageFile(fileInput.files[0]);
+  fileInput.value = '';
+});
+imgPreviewRemove.addEventListener('click', () => {
+  pendingImage = null;
+  imgPreviewRow.classList.remove('show');
+});
+
+// Paste an image straight from the clipboard (screenshot, copied image, etc.)
+// into the composer, same as using the 📎 attach button.
+composerInput.addEventListener('paste', e => {
+  const items = (e.clipboardData || window.clipboardData).items || [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      e.preventDefault();
+      attachImageFile(item.getAsFile());
+      return;
+    }
+  }
+});
+
+function syncWebSearchUI() {
+  websearchBtn.classList.toggle('active', webSearchOn);
+  const modalToggle = document.getElementById('websearch-modal-toggle');
+  if (modalToggle) modalToggle.checked = webSearchOn;
+}
+websearchBtn.addEventListener('click', () => {
+  webSearchOn = !webSearchOn;
+  localStorage.setItem('txlgpt-websearch', webSearchOn ? '1' : '0');
+  syncWebSearchUI();
+});
+syncWebSearchUI();
+
+function syncResearchUI() {
+  researchBtn.classList.toggle('active', researchOn);
+  const modalToggle = document.getElementById('research-modal-toggle');
+  if (modalToggle) modalToggle.checked = researchOn;
+}
+researchBtn.addEventListener('click', () => {
+  researchOn = !researchOn;
+  localStorage.setItem('txlgpt-research', researchOn ? '1' : '0');
+  syncResearchUI();
+});
+syncResearchUI();
+const researchModalToggle = document.getElementById('research-modal-toggle');
+if (researchModalToggle) researchModalToggle.addEventListener('change', () => {
+  researchOn = researchModalToggle.checked;
+  localStorage.setItem('txlgpt-research', researchOn ? '1' : '0');
+  syncResearchUI();
+});
+
+if (thinkingBtn) {
+  thinkingBtn.classList.toggle('active', thinkingOn);
+  thinkingBtn.addEventListener('click', () => {
+    thinkingOn = !thinkingOn;
+    localStorage.setItem('txlgpt-thinking', thinkingOn ? '1' : '0');
+    thinkingBtn.classList.toggle('active', thinkingOn);
+    thinkingBtn.title = imageGenMode ? 'Thinking (plans the image prompt before generating)' : 'Thinking (more reasoning effort)';
+  });
+}
+
+if (imagegenBtn) {
+  imagegenBtn.addEventListener('click', () => {
+    imageGenMode = !imageGenMode;
+    imagegenBtn.classList.toggle('active', imageGenMode);
+    composerEl.classList.toggle('image-mode', imageGenMode);
+    composerInput.placeholder = imageGenMode ? 'Describe an image to generate...' : 'Message Txl GPT...';
+    attachBtn.disabled = imageGenMode;
+    attachBtn.style.opacity = imageGenMode ? '0.4' : '1';
+    websearchBtn.disabled = imageGenMode;
+    websearchBtn.style.opacity = imageGenMode ? '0.4' : '1';
+    researchBtn.disabled = imageGenMode;
+    researchBtn.style.opacity = imageGenMode ? '0.4' : '1';
+    if (thinkingBtn) thinkingBtn.title = imageGenMode ? 'Thinking (plans the image prompt before generating)' : 'Thinking (more reasoning effort)';
+  });
+}
+
+// --- Plugins modal ---
+const pluginsModal = document.getElementById('plugins-modal');
+document.getElementById('plugins-btn').addEventListener('click', () => pluginsModal.classList.add('show'));
+document.getElementById('plugins-close').addEventListener('click', () => pluginsModal.classList.remove('show'));
+pluginsModal.addEventListener('click', e => { if (e.target === pluginsModal) pluginsModal.classList.remove('show'); });
+const websearchModalToggle = document.getElementById('websearch-modal-toggle');
+if (websearchModalToggle) websearchModalToggle.addEventListener('change', () => {
+  webSearchOn = websearchModalToggle.checked;
+  localStorage.setItem('txlgpt-websearch', webSearchOn ? '1' : '0');
+  syncWebSearchUI();
+});
+
+// --- New project modal ---
+const projectModal = document.getElementById('project-modal');
+document.getElementById('new-project-btn').addEventListener('click', () => {
+  document.getElementById('project-name-input').value = '';
+  projectModal.classList.add('show');
+  document.getElementById('project-name-input').focus();
+});
+document.getElementById('project-cancel').addEventListener('click', () => projectModal.classList.remove('show'));
+projectModal.addEventListener('click', e => { if (e.target === projectModal) projectModal.classList.remove('show'); });
+document.getElementById('project-create').addEventListener('click', async () => {
+  const name = document.getElementById('project-name-input').value.trim();
+  if (!name) return;
+  const res = await fetch('/projects/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  const data = await res.json();
+  if (!res.ok) { showError(data.error || 'Could not create project.'); return; }
+  projectModal.classList.remove('show');
+  window.location.reload();
+});
+document.querySelectorAll('.project-del').forEach(btn => {
+  btn.addEventListener('click', async e => {
+    e.preventDefault();
+    if (!confirm('Delete this project? Its chats will move back to your main list.')) return;
+    await fetch(`/projects/${btn.dataset.id}/delete`, { method: 'POST' });
+    window.location.reload();
+  });
+});
+
+// --- Conversation "..." menu (pin / move to project / delete) ---
+const convMenu = document.getElementById('conv-menu');
+let menuTargetId = null;
+function closeConvMenu() { convMenu.classList.remove('show'); menuTargetId = null; }
+document.addEventListener('click', e => {
+  if (!convMenu.contains(e.target) && !e.target.classList.contains('conv-menu-btn')) closeConvMenu();
+});
+document.querySelectorAll('.conv-menu-btn').forEach(btn => {
+  btn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    menuTargetId = btn.dataset.id;
+    const pinned = btn.dataset.pinned === 'true';
+    document.getElementById('menu-pin-btn').textContent = pinned ? '📌 Unpin' : '📌 Pin';
+    document.getElementById('menu-pin-btn').dataset.pinned = pinned ? 'true' : 'false';
+    const projList = document.getElementById('menu-projects');
+    projList.innerHTML = '';
+    if (PROJECTS.length === 0) {
+      const none = document.createElement('div');
+      none.style.cssText = 'padding:6px 10px;font-size:0.78rem;color:var(--muted);';
+      none.textContent = 'No projects yet';
+      projList.appendChild(none);
+    } else {
+      PROJECTS.forEach(p => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = '📁 ' + p.name;
+        b.addEventListener('click', () => moveToProject(menuTargetId, p.id));
+        projList.appendChild(b);
+      });
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = '✕ Remove from project';
+      removeBtn.addEventListener('click', () => moveToProject(menuTargetId, null));
+      projList.appendChild(removeBtn);
+    }
+    const rect = btn.getBoundingClientRect();
+    convMenu.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+    convMenu.style.top = rect.bottom + 4 + 'px';
+    convMenu.classList.add('show');
+  });
+});
+document.getElementById('menu-pin-btn').addEventListener('click', async () => {
+  if (!menuTargetId) return;
+  await fetch(`/conv/${menuTargetId}/pin`, { method: 'POST' });
+  closeConvMenu();
+  window.location.reload();
+});
+document.getElementById('menu-delete-btn').addEventListener('click', async () => {
+  if (!menuTargetId) return;
+  const id = menuTargetId;
+  closeConvMenu();
+  await fetch(`/conv/${id}/delete`, { method: 'POST' });
+  if (String(activeConvId) === String(id)) window.location.href = '/'; else window.location.reload();
+});
+async function moveToProject(convId, projectId) {
+  await fetch(`/conv/${convId}/project`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+  closeConvMenu();
+  window.location.reload();
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function enhanceCodeBlocks(bubble) {
+  bubble.querySelectorAll('pre').forEach(pre => {
+    if (pre.closest('.code-wrap')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'code-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.type = 'button';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(pre.innerText).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      });
+    });
+    wrap.appendChild(btn);
+  });
+}
+document.querySelectorAll('.bubble').forEach(enhanceCodeBlocks);
+
+function getMsgList() {
+  let list = document.getElementById('msg-list');
+  if (!list) {
+    messagesEl.classList.remove('landing');
+    messagesEl.innerHTML = '<div class="msg-list" id="msg-list"></div>';
+    list = document.getElementById('msg-list');
+  }
+  return list;
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addUserMessage(text, imageDataUrl) {
+  const list = getMsgList();
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML =
+    '<div class="msg-col">' +
+      (imageDataUrl ? '<img class="msg-image" alt="Attached image">' : '') +
+      '<div class="bubble"></div>' +
+    '</div>';
+  if (imageDataUrl) div.querySelector('.msg-image').src = imageDataUrl;
+  div.querySelector('.bubble').textContent = text;
+  list.appendChild(div);
+  scrollToBottom();
+}
+
+function addAssistantPlaceholder() {
+  const list = getMsgList();
+  list.querySelectorAll('.msg.assistant .msg-actions').forEach(el => el.remove());
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.innerHTML = '<div class="avatar">T</div><div class="msg-col"><div class="bubble streaming"></div></div>';
+  list.appendChild(div);
+  scrollToBottom();
+  return div.querySelector('.bubble');
+}
+
+function wireMsgActions(actionsEl, bubble) {
+  const copyBtn = actionsEl.querySelector('.copy-btn');
+  if (copyBtn) copyBtn.addEventListener('click', () => navigator.clipboard.writeText(bubble.innerText));
+  const regenBtn = actionsEl.querySelector('.regenerate-btn');
+  if (regenBtn) regenBtn.addEventListener('click', regenerate);
+}
+
+function finishAssistantBubble(bubble, html) {
+  bubble.classList.remove('streaming');
+  bubble.innerHTML = html;
+  enhanceCodeBlocks(bubble);
+  const col = bubble.closest('.msg-col');
+  if (col && !col.querySelector('.msg-actions')) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions always-visible';
+    actions.innerHTML = '<button class="msg-action copy-btn" type="button" title="Copy">⧉ Copy</button><button class="msg-action regenerate-btn" type="button" title="Regenerate">↻ Regenerate</button>';
+    col.appendChild(actions);
+    wireMsgActions(actions, bubble);
+  }
+}
+
+function addSidebarConv(id, title) {
+  const list = document.getElementById('conv-list');
+  list.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+  let chatsLabel = [...list.querySelectorAll('.sb-section-label')].find(el => el.textContent.trim() === 'Chats');
+  const div = document.createElement('div');
+  div.className = 'conv-item active';
+  div.dataset.id = id;
+  div.innerHTML = `<a class="conv-title" href="/?c=${id}">${escapeHtml(title)}</a><button class="conv-menu-btn" data-id="${id}" data-pinned="false" title="More">⋯</button>`;
+  if (chatsLabel) {
+    chatsLabel.insertAdjacentElement('afterend', div);
+  } else {
+    const label = document.createElement('div');
+    label.className = 'sb-section-label';
+    label.textContent = 'Chats';
+    list.appendChild(label);
+    list.appendChild(div);
+  }
+  wireConvMenuBtn(div.querySelector('.conv-menu-btn'));
+}
+
+function wireConvMenuBtn(btn) {
+  btn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    menuTargetId = btn.dataset.id;
+    const pinned = btn.dataset.pinned === 'true';
+    document.getElementById('menu-pin-btn').textContent = pinned ? '📌 Unpin' : '📌 Pin';
+    const projList = document.getElementById('menu-projects');
+    projList.innerHTML = '';
+    if (PROJECTS.length === 0) {
+      const none = document.createElement('div');
+      none.style.cssText = 'padding:6px 10px;font-size:0.78rem;color:var(--muted);';
+      none.textContent = 'No projects yet';
+      projList.appendChild(none);
+    } else {
+      PROJECTS.forEach(p => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = '📁 ' + p.name;
+        b.addEventListener('click', () => moveToProject(menuTargetId, p.id));
+        projList.appendChild(b);
+      });
+    }
+    const rect = btn.getBoundingClientRect();
+    convMenu.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+    convMenu.style.top = rect.bottom + 4 + 'px';
+    convMenu.classList.add('show');
+  });
+}
+
+async function streamFromResponse(res, bubble) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = JSON.parse(line.slice(6));
+      if (payload.conv_id) {
+        activeConvId = payload.conv_id;
+        history.pushState({}, '', '/?c=' + payload.conv_id);
+        addSidebarConv(payload.conv_id, payload.title);
+      } else if (payload.delta) {
+        text += payload.delta;
+        bubble.textContent = text;
+        scrollToBottom();
+      } else if (payload.error) {
+        showError(payload.error);
+        bubble.classList.remove('streaming');
+        if (!text) bubble.closest('.msg').remove();
+      } else if (payload.done) {
+        finishAssistantBubble(bubble, payload.html);
+        scrollToBottom();
+      }
+    }
+  }
+}
+
+async function sendMessage() {
+  if (isStreaming) return;
+  const text = composerInput.value.trim();
+  if (!text) return;
+
+  if (imageGenMode) { sendImageGen(text); return; }
+
+  const image = pendingImage;
+  addUserMessage(text, image);
+  composerInput.value = '';
+  autoResize();
+  pendingImage = null;
+  imgPreviewRow.classList.remove('show');
+
+  const bubble = addAssistantPlaceholder();
+  isStreaming = true;
+  sendBtn.disabled = true;
+
+  try {
+    const res = await fetch('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text, conv_id: activeConvId, model: modelSelect.value, image: image,
+        web_search: webSearchOn, deep_research: researchOn, thinking: thinkingOn, gpt_id: activeGptId,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showError(data.error || 'Something went wrong.');
+      bubble.closest('.msg').remove();
+      return;
+    }
+    await streamFromResponse(res, bubble);
+  } catch (e) {
+    showError('Network error - please try again.');
+    bubble.closest('.msg').remove();
+  } finally {
+    isStreaming = false;
+    sendBtn.disabled = false;
+  }
+}
+
+async function sendImageGen(prompt) {
+  addUserMessage(prompt, null);
+  composerInput.value = '';
+  autoResize();
+
+  const list = getMsgList();
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.innerHTML = '<div class="avatar">T</div><div class="msg-col"><div class="bubble streaming">Generating image…</div></div>';
+  list.appendChild(div);
+  scrollToBottom();
+
+  isStreaming = true;
+  sendBtn.disabled = true;
+  try {
+    const res = await fetch('/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt, conv_id: activeConvId, thinking: thinkingOn }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      showError(data.error || 'Image generation failed.');
+      div.remove();
+      return;
+    }
+    if (data.is_new) {
+      activeConvId = data.conv_id;
+      history.pushState({}, '', '/?c=' + data.conv_id);
+      addSidebarConv(data.conv_id, data.title);
+    }
+    const bubble = div.querySelector('.bubble');
+    bubble.classList.remove('streaming');
+    bubble.innerHTML = data.html;
+    const img = document.createElement('img');
+    img.className = 'msg-image generated';
+    img.src = data.image_data;
+    div.querySelector('.msg-col').insertBefore(img, bubble);
+    scrollToBottom();
+  } catch (e) {
+    showError('Network error - please try again.');
+    div.remove();
+  } finally {
+    isStreaming = false;
+    sendBtn.disabled = false;
+  }
+}
+
+async function regenerate() {
+  if (isStreaming || !activeConvId) return;
+  const list = document.getElementById('msg-list');
+  const lastAssistant = [...list.querySelectorAll('.msg.assistant')].pop();
+  if (lastAssistant) lastAssistant.remove();
+  const bubble = addAssistantPlaceholder();
+  isStreaming = true;
+  sendBtn.disabled = true;
+  try {
+    const res = await fetch(`/conv/${activeConvId}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelSelect.value, thinking: thinkingOn }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showError(data.error || 'Something went wrong.');
+      bubble.closest('.msg').remove();
+      return;
+    }
+    await streamFromResponse(res, bubble);
+  } catch (e) {
+    showError('Network error - please try again.');
+    bubble.closest('.msg').remove();
+  } finally {
+    isStreaming = false;
+    sendBtn.disabled = false;
+  }
+}
+
+document.querySelectorAll('.conv-menu-btn').forEach(wireConvMenuBtn);
+document.querySelectorAll('.msg.assistant .msg-actions').forEach(actions => {
+  wireMsgActions(actions, actions.closest('.msg-col').querySelector('.bubble'));
+});
+document.getElementById('new-chat-btn').addEventListener('click', () => window.location.href = '/');
+sendBtn.addEventListener('click', sendMessage);
+
+if (document.getElementById('msg-list')) scrollToBottom();
+</script>
+</body>
+</html>

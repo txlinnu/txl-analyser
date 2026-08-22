@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Work - Txl GPT</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22%2310A37F%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23fff%22 font-family=%22sans-serif%22 font-weight=%22700%22>T</text></svg>">
+<style>
+  :root {
+    --bg: #212121; --sidebar: #171717; --panel: #2a2a2a; --bubble: #2f2f2f;
+    --text: #ececec; --muted: #9b9b9b; --border: #3a3a3a; --border-soft: #313131;
+    --accent: #10A37F; --accent-hover: #189b78; --accent-soft: #16342a;
+    --danger-bg: #3a2422; --danger-text: #ff9e82; --danger-border: #5a3428;
+    --code-bg: #1a1a1a;
+    --add-bg: #163422; --add-text: #7fd99e; --del-bg: #3a1e1e; --del-text: #ff9e9e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; overflow: hidden; }
+  a { color: var(--accent); }
+
+  #sidebar { width: 260px; flex-shrink: 0; background: var(--sidebar); display: flex; flex-direction: column; border-right: 1px solid var(--border-soft); height: 100vh; }
+  .sb-top { padding: 12px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem; padding: 6px 4px 14px; }
+  .brand .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+  .new-chat-btn, .nav-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: 0.87rem; cursor: pointer; text-align: left; margin-bottom: 6px; text-decoration: none; }
+  .new-chat-btn:hover, .nav-btn:hover { background: var(--panel); }
+  #conv-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .conv-item { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; color: var(--text); text-decoration: none; white-space: nowrap; overflow: hidden; margin-bottom: 2px; }
+  .conv-item:hover, .conv-item.active { background: var(--panel); }
+  .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; color: inherit; text-decoration: none; }
+  .sb-bottom { padding: 10px 12px; border-top: 1px solid var(--border-soft); }
+  .sb-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sb-email { font-size: 0.8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 0.68rem; color: var(--accent); margin-top: 3px; }
+  .logout-btn { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; padding: 4px 8px; border-radius: 6px; }
+  .logout-btn:hover { background: var(--panel); color: var(--text); }
+  .workspace-note { font-size: 0.68rem; color: var(--muted); padding: 8px 12px; word-break: break-all; border-top: 1px solid var(--border-soft); }
+
+  #main { flex: 1; display: flex; flex-direction: column; height: 100vh; min-width: 0; }
+  #messages { flex: 1; overflow-y: auto; }
+  #messages.landing { display: flex; align-items: center; justify-content: center; }
+  .landing-inner { text-align: center; max-width: 480px; }
+  .landing-inner .mark { width: 56px; height: 56px; border-radius: 14px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin: 0 auto 16px; }
+  .landing-inner h1 { font-size: 1.5rem; margin: 0 0 6px; }
+  .landing-inner p { color: var(--muted); font-size: 0.9rem; margin: 0 0 4px; }
+
+  .msg-list { max-width: 760px; margin: 0 auto; padding: 24px 20px 12px; }
+  .msg { display: flex; gap: 14px; margin-bottom: 20px; align-items: flex-start; }
+  .msg.user { flex-direction: row-reverse; }
+  .avatar { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0; margin-top: 2px; }
+  .msg-col { display: flex; flex-direction: column; min-width: 0; }
+  .msg.user .msg-col { align-items: flex-end; max-width: 82%; }
+  .msg.assistant .msg-col { flex: 1; min-width: 0; max-width: calc(100% - 44px); }
+  .bubble { white-space: pre-wrap; word-wrap: break-word; line-height: 1.6; font-size: 0.95rem; }
+  .msg.user .bubble { background: var(--bubble); border-radius: 18px; padding: 10px 16px; }
+  .bubble.streaming::after { content: '▍'; animation: blink 1s step-start infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .bubble pre { background: var(--code-bg); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  .bubble code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.85rem; }
+  {{ pygments_css | safe }}
+
+  .action-card { max-width: 760px; margin: 0 auto 16px 46px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .action-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 0.83rem; cursor: pointer; user-select: none; font-family: ui-monospace, Consolas, monospace; }
+  .action-head .chevron { color: var(--muted); font-size: 0.72rem; margin-left: auto; transition: transform 0.15s; }
+  .action-card.expanded .chevron { transform: rotate(90deg); }
+  .action-body { display: none; border-top: 1px solid var(--border); padding: 10px 12px; }
+  .action-card.expanded .action-body { display: block; }
+  .action-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.82rem; font-family: ui-monospace, Consolas, monospace; color: var(--muted); }
+
+  .pending-card { max-width: 760px; margin: 0 auto 16px 46px; border: 1.5px solid var(--accent); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .pending-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 0.85rem; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+  .pending-body { padding: 12px; }
+  .pending-body .cmd { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; background: var(--code-bg); padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
+  .diff-view { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; background: var(--code-bg); border-radius: 8px; padding: 6px 0; max-height: 300px; overflow-y: auto; }
+  .diff-line { padding: 1px 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff-line.add { background: var(--add-bg); color: var(--add-text); }
+  .diff-line.del { background: var(--del-bg); color: var(--del-text); }
+  .pending-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .approve-btn, .deny-btn { border: none; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .approve-btn { background: var(--accent); color: #fff; }
+  .approve-btn:hover { background: var(--accent-hover); }
+  .deny-btn { background: var(--bubble); color: var(--text); }
+  .deny-btn:hover { background: var(--border); }
+
+  #composer-wrap { padding: 8px 20px 20px; }
+  #composer { max-width: 760px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 8px 10px 8px 16px; }
+  .composer-row { display: flex; align-items: flex-end; gap: 8px; }
+  #composer textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; color: var(--text); font-size: 0.95rem; font-family: inherit; max-height: 200px; padding: 8px 0; line-height: 1.4; }
+  #composer textarea::placeholder { color: var(--muted); }
+  #model-select { background: transparent; color: var(--muted); border: none; font-size: 0.78rem; cursor: pointer; outline: none; }
+  #send-btn { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--text); color: var(--bg); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+  #send-btn:disabled { opacity: 0.4; cursor: default; }
+  .composer-hint { text-align: center; font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+  .error-banner { max-width: 760px; margin: 0 auto 10px; background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 10px; padding: 10px 14px; font-size: 0.85rem; display: none; }
+  .error-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="sb-top">
+    <div class="brand"><span class="mark">T</span> Work</div>
+    <button class="new-chat-btn" id="new-chat-btn" type="button">+ New task</button>
+    <a class="nav-btn" href="/">💬 Chat</a>
+  </div>
+  <div id="conv-list">
+    {% if pinned %}<div style="font-size:0.72rem;color:var(--muted);padding:8px 10px 4px;">PINNED</div>
+    {% for c in pinned %}<div class="conv-item {{ 'active' if c.active else '' }}"><a class="conv-title" href="/work?c={{ c.id }}">📌 {{ c.title }}</a></div>{% endfor %}
+    {% endif %}
+    {% for p in projects %}{% if p.chats %}<div style="font-size:0.72rem;color:var(--muted);padding:8px 10px 4px;">📁 {{ p.name }}</div>
+    {% for c in p.chats %}<div class="conv-item {{ 'active' if c.active else '' }}"><a class="conv-title" href="/work?c={{ c.id }}">{{ c.title }}</a></div>{% endfor %}{% endif %}{% endfor %}
+    {% if ungrouped %}<div style="font-size:0.72rem;color:var(--muted);padding:8px 10px 4px;">TASKS</div>
+    {% for c in ungrouped %}<div class="conv-item {{ 'active' if c.active else '' }}"><a class="conv-title" href="/work?c={{ c.id }}">{{ c.title }}</a></div>{% endfor %}
+    {% endif %}
+  </div>
+  <div class="workspace-note">📂 {{ workspace }}</div>
+  <div class="sb-bottom">
+    <div class="sb-user">
+      <div><div class="sb-email">{{ user_email }}</div><div class="badge">{{ header_badge }}</div></div>
+      <form method="POST" action="/logout"><button class="logout-btn" type="submit">Log out</button></form>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="messages" class="{{ 'landing' if not transcript else '' }}">
+    {% if not transcript %}
+    <div class="landing-inner">
+      <div class="mark">T</div>
+      <h1>Work agent</h1>
+      <p>Give it a multi-step task - it can search the web, read/write files, and run commands in a sandboxed workspace.</p>
+      <p>File writes and commands always stop for your approval first.</p>
+    </div>
+    {% else %}
+    <div class="msg-list" id="msg-list">
+      {% for item in transcript %}
+        {% if item.kind == 'user' %}
+        <div class="msg user"><div class="msg-col"><div class="bubble">{{ item.text }}</div></div></div>
+        {% elif item.kind == 'assistant' %}
+        <div class="msg assistant"><div class="avatar">T</div><div class="msg-col"><div class="bubble">{{ item.html | safe }}</div></div></div>
+        {% elif item.kind == 'action' %}
+        <div class="action-card" data-kind="{{ item.name }}">
+          <div class="action-head"><span>🔧 {{ item.name }}({{ item.args | tojson }})</span><span class="chevron">›</span></div>
+          <div class="action-body"><pre>{{ item.result }}</pre></div>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div id="composer-wrap">
+    <div class="error-banner" id="error-banner"></div>
+    {% if pending %}
+    <div class="pending-card" id="pending-card" style="max-width:760px;margin:0 auto 12px;"></div>
+    {% endif %}
+    <div id="composer">
+      <div class="composer-row">
+        <textarea id="composer-input" rows="1" placeholder="Describe a task..." {{ 'disabled' if pending else '' }}></textarea>
+        <select id="model-select" {{ 'disabled' if pending else '' }}>
+          {% for value, label in model_choices %}
+          <option value="{{ value }}" {{ 'selected' if value == 'auto' else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button id="send-btn" type="button" title="Send" {{ 'disabled' if pending else '' }}>➤</button>
+      </div>
+    </div>
+    <div class="composer-hint">Read-only actions (search, read files) run automatically. Writes and commands wait for your approval.</div>
+  </div>
+</div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const composerInput = document.getElementById('composer-input');
+const sendBtn = document.getElementById('send-btn');
+const modelSelect = document.getElementById('model-select');
+const errorBanner = document.getElementById('error-banner');
+let activeConvId = {{ active_id or 'null' }};
+let isStreaming = false;
+
+function showError(msg) { errorBanner.textContent = msg; errorBanner.classList.add('show'); setTimeout(() => errorBanner.classList.remove('show'), 6000); }
+function autoResize() { composerInput.style.height = 'auto'; composerInput.style.height = Math.min(composerInput.scrollHeight, 200) + 'px'; }
+composerInput.addEventListener('input', autoResize);
+composerInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+function getMsgList() {
+  let list = document.getElementById('msg-list');
+  if (!list) { messagesEl.classList.remove('landing'); messagesEl.innerHTML = '<div class="msg-list" id="msg-list"></div>'; list = document.getElementById('msg-list'); }
+  return list;
+}
+
+function addUserMessage(text) {
+  const list = getMsgList();
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML = '<div class="msg-col"><div class="bubble"></div></div>';
+  div.querySelector('.bubble').textContent = text;
+  list.appendChild(div);
+  scrollToBottom();
+}
+
+function buildActionCard(kind, args, result, isNew) {
+  const card = document.createElement('div');
+  card.className = 'action-card';
+  card.innerHTML =
+    '<div class="action-head"><span>🔧 ' + escapeHtml(kind) + '(' + escapeHtml(JSON.stringify(args)) + ')</span><span class="chevron">›</span></div>' +
+    '<div class="action-body"><pre></pre></div>';
+  card.querySelector('.action-body pre').textContent = result || '(no output)';
+  card.querySelector('.action-head').addEventListener('click', () => card.classList.toggle('expanded'));
+  if (isNew) { const list = getMsgList(); list.appendChild(card); }
+  return card;
+}
+
+function buildDiffHtml(diff) {
+  return diff.split('\n').map(line => {
+    let cls = '';
+    if (line.startsWith('+') && !line.startsWith('+++')) cls = 'add';
+    else if (line.startsWith('-') && !line.startsWith('---')) cls = 'del';
+    return '<div class="diff-line ' + cls + '">' + escapeHtml(line || ' ') + '</div>';
+  }).join('');
+}
+
+function buildPendingCard(pending) {
+  let bodyHtml = '';
+  if (pending.kind === 'write_file') {
+    const label = pending.is_new ? 'New file' : 'Edit file';
+    bodyHtml = '<div style="margin-bottom:8px;">' + label + ': <strong>' + escapeHtml(pending.path || '') + '</strong></div>' +
+      '<div class="diff-view">' + buildDiffHtml(pending.diff || '') + '</div>';
+  } else if (pending.kind === 'run_command') {
+    bodyHtml = '<div class="cmd">' + escapeHtml(pending.command || '') + '</div>';
+  } else {
+    bodyHtml = '<div class="cmd">' + escapeHtml(JSON.stringify(pending.args || {})) + '</div>';
+  }
+  const card = document.createElement('div');
+  card.className = 'pending-card';
+  card.style.cssText = 'max-width:760px;margin:0 auto 12px;';
+  card.innerHTML =
+    '<div class="pending-head">⚠ Wants to ' + (pending.kind === 'write_file' ? 'write a file' : 'run a command') + '</div>' +
+    '<div class="pending-body">' + bodyHtml +
+      '<div class="pending-actions"><button class="approve-btn" type="button">✓ Approve</button><button class="deny-btn" type="button">✕ Deny</button></div>' +
+    '</div>';
+  card.querySelector('.approve-btn').addEventListener('click', () => resolvePending('/work/approve'));
+  card.querySelector('.deny-btn').addEventListener('click', () => resolvePending('/work/deny'));
+  const composerWrap = document.getElementById('composer-wrap');
+  const oldCard = composerWrap.querySelector('.pending-card');
+  if (oldCard) oldCard.remove();
+  composerWrap.insertBefore(card, document.getElementById('composer'));
+  setComposerDisabled(true);
+  return card;
+}
+
+function setComposerDisabled(disabled) {
+  composerInput.disabled = disabled;
+  modelSelect.disabled = disabled;
+  sendBtn.disabled = disabled;
+}
+
+async function streamWork(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = JSON.parse(line.slice(6));
+      if (payload.conv_id) {
+        activeConvId = payload.conv_id;
+        history.pushState({}, '', '/work?c=' + payload.conv_id);
+      } else if (payload.action) {
+        buildActionCard(payload.action.kind, payload.action.args, payload.action.result, true);
+        scrollToBottom();
+      } else if (payload.pending) {
+        buildPendingCard(payload.pending);
+        scrollToBottom();
+      } else if (payload.error) {
+        showError(payload.error);
+      } else if (payload.done) {
+        const list = getMsgList();
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        div.innerHTML = '<div class="avatar">T</div><div class="msg-col"><div class="bubble"></div></div>';
+        div.querySelector('.bubble').innerHTML = payload.html;
+        list.appendChild(div);
+        scrollToBottom();
+      } else if (payload.executed) {
+        // action already rendered by buildActionCard on approve/deny follow-through
+      }
+    }
+  }
+}
+
+async function sendMessage() {
+  if (isStreaming) return;
+  const text = composerInput.value.trim();
+  if (!text) return;
+  addUserMessage(text);
+  composerInput.value = '';
+  autoResize();
+  isStreaming = true;
+  setComposerDisabled(true);
+  try {
+    const res = await fetch('/work/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, conv_id: activeConvId, model: modelSelect.value }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); showError(d.error || 'Something went wrong.'); return; }
+    await streamWork(res);
+  } catch (e) {
+    showError('Network error - please try again.');
+  } finally {
+    isStreaming = false;
+    if (!document.querySelector('.pending-card')) setComposerDisabled(false);
+  }
+}
+
+async function resolvePending(url) {
+  const card = document.querySelector('.pending-card');
+  if (card) card.remove();
+  isStreaming = true;
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conv_id: activeConvId, model: modelSelect.value }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); showError(d.error || 'Something went wrong.'); return; }
+    await streamWork(res);
+  } catch (e) {
+    showError('Network error - please try again.');
+  } finally {
+    isStreaming = false;
+    if (!document.querySelector('.pending-card')) setComposerDisabled(false);
+  }
+}
+
+document.querySelectorAll('.action-card').forEach(card => {
+  card.querySelector('.action-head').addEventListener('click', () => card.classList.toggle('expanded'));
+});
+
+const INITIAL_PENDING = {{ (pending | tojson) if pending else 'null' }};
+if (INITIAL_PENDING) buildPendingCard(INITIAL_PENDING);
+
+document.getElementById('new-chat-btn').addEventListener('click', () => window.location.href = '/work');
+sendBtn.addEventListener('click', sendMessage);
+if (document.getElementById('msg-list')) scrollToBottom();
+</script>
+</body>
+</html>

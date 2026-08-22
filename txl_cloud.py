@@ -65,12 +65,17 @@ _client = None
 def _get_client() -> Groq:
     global _client
     if _client is None:
-        # CHAT_GROQ_API_KEY, if set, lets TXL Cloud use a different Groq
-        # account/quota than the other agents here (pdf_research_agent_local.py,
-        # youtube_agent.py) - useful since they'd otherwise all share one
-        # daily free-tier token limit. Falls back to the same GROQ_API_KEY
-        # everything else uses if it's not set.
-        api_key = os.environ.get("CHAT_GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+        # TXLGPT_GROQ_API_KEY / CHAT_GROQ_API_KEY, if set, let Txl GPT /
+        # TXL Cloud each use a different Groq account/quota than the other
+        # agents here (pdf_research_agent_local.py, youtube_agent.py) -
+        # useful since they'd otherwise all share one daily free-tier token
+        # limit. Falls back to the same GROQ_API_KEY everything else uses
+        # if neither is set.
+        api_key = (
+            os.environ.get("TXLGPT_GROQ_API_KEY")
+            or os.environ.get("CHAT_GROQ_API_KEY")
+            or os.environ.get("GROQ_API_KEY")
+        )
         if not api_key:
             raise RuntimeError(
                 "GROQ_API_KEY is not set. Get a free key (no credit card) at "
@@ -97,14 +102,23 @@ def stream_reply(
     model: str = DEFAULT_MODEL,
     custom_instructions: str = None,
     image_data_url: str = None,
+    system_prompt: str = None,
+    reasoning_effort: str = None,
 ) -> Iterator[str]:
     """
     Given a conversation history (list of {"role", "content"} dicts, no
     system message - just user/assistant turns), stream the assistant's
     reply back as text chunks. `custom_instructions`, if set, is the
     user's own "Customize" preferences, appended to the system prompt.
+    `system_prompt`, if set, replaces the default TXL Cloud persona
+    entirely - lets other apps (e.g. txlgpt_app.py) reuse this connector
+    with their own identity instead of TXL Cloud's. `reasoning_effort`
+    ("low"/"medium"/"high"), if set, is passed straight through to Groq -
+    only openai/gpt-oss-* models honor it (they're native reasoning
+    models); silently ignored (with a retry) if the API rejects it for
+    whatever model is in use.
     """
-    system_prompt = SYSTEM_PROMPT
+    system_prompt = system_prompt or SYSTEM_PROMPT
     if custom_instructions:
         system_prompt += (
             "\n\nThe user has also given you these standing preferences for how "
@@ -129,10 +143,12 @@ def stream_reply(
 
     last_error = None
     yielded_any = False
+    effort = reasoning_effort
     for attempt in range(MAX_RETRIES):
         try:
+            kwargs = {"reasoning_effort": effort} if effort else {}
             stream = _get_client().chat.completions.create(
-                model=model, messages=messages, temperature=0.6, stream=True,
+                model=model, messages=messages, temperature=0.6, stream=True, **kwargs,
             )
             for chunk in stream:
                 delta = chunk.choices[0].delta.content

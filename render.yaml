@@ -32,3 +32,23 @@ services:
         sync: false
       - key: ANALYSER_URL
         sync: false
+
+  - type: web
+    name: txl-gpt
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-local.txt
+    startCommand: gunicorn txlgpt_app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TXLGPT_GROQ_API_KEY
+        sync: false
+      - key: TXLGPT_DATABASE_URL
+        sync: false
+      - key: TXLGPT_SECRET_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SITE_PASSWORD
+        sync: false

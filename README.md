@@ -184,6 +184,68 @@ just don't take a wordy "done!" at face value if no action card or
 approval prompt showed up for it. Simple, one-thing-at-a-time requests
 are noticeably more reliable than asking for several actions at once.
 
+## Txl GPT (ChatGPT-style app)
+
+A separate, standalone ChatGPT-style web app — [`txlgpt_app.py`](txlgpt_app.py) —
+its own accounts, its own database (`instance/txlgpt.db`), its own sidebar
+chat history, streamed replies, image upload, all independent from TXL
+Cloud (`chat_app.py`) so the two can run side by side without sharing any
+data. It reuses TXL Cloud's Groq/Ollama connector modules
+([`txl_cloud.py`](txl_cloud.py) / [`txl_cloud_local.py`](txl_cloud_local.py))
+under the hood since those are generic backends, not tied to chat_app.py.
+
+```bash
+python txlgpt_app.py
+```
+Open **http://127.0.0.1:5003**, sign up with an email + password, and start
+chatting.
+
+Same two interchangeable backends as TXL Cloud, picked with `TXLGPT_BACKEND`:
+
+**bash:**
+```bash
+TXLGPT_BACKEND=ollama TXLGPT_PORT=5004 python txlgpt_app.py
+```
+**PowerShell:**
+```powershell
+$env:TXLGPT_BACKEND='ollama'; $env:TXLGPT_PORT='5004'; python txlgpt_app.py
+```
+
+Uses the same `GROQ_API_KEY`/`CHAT_GROQ_API_KEY` as TXL Cloud (see
+`.env.example`) - set `TXLGPT_SECRET_KEY` for the session cookie in
+production.
+
+**What's included:**
+- Accounts (signup/login/logout), forgot/reset password (needs
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` configured - same as TXL Cloud's,
+  see `.env.example`; without it the page just says so plainly).
+- Persisted chat history, streaming replies, regenerate, "Auto" model
+  routing, image upload/vision.
+- **Pinned chats** and **Projects** (folders) - sidebar is grouped into
+  Pinned / Projects / Chats, like ChatGPT's. Pin, move, or delete a chat
+  from its "⋯" menu; make a project with "+ New project".
+- **Plugins panel** (🔌 in the sidebar) - currently one built-in plugin,
+  **Web Search** (deterministic DuckDuckGo grounding, same approach as
+  `pdf_research_agent_local.py` - not left up to the model to decide
+  whether to search). Toggle it from the panel or the composer's 🌐
+  button. This is a seed for a plugin system, not a marketplace - one
+  real, working plugin rather than a facade.
+- **Image generation** (🖼 in the composer) - via Gemini's native image
+  output, needs `GEMINI_API_KEY` (same key as TXL Cloud's Gemini
+  fallback). Uses `IMAGE_MODEL` in `txl_gemini.py` (override with
+  `GEMINI_IMAGE_MODEL` if Google renames/retires it). Image generation
+  draws from its own separate free-tier quota from regular chat - it's
+  common to hit a 429 on the image quota even when chat is working fine.
+- **Scheduled tasks** (🕐 in the sidebar) - a prompt that runs once, daily
+  at a set time, or on a fixed interval. Runs via an in-process background
+  thread that checks for due tasks every 30s, so tasks only fire while
+  `txlgpt_app.py` itself is running (same limitation as any local dev
+  app - not a hosted cron service). Results land in a new conversation,
+  linked from the task's "View results" link.
+
+**Not included:** Code mode, Deep check, artifacts side panel, a
+third-party plugin marketplace (only Web Search exists today).
+
 ## Command line
 
 ### PDF summarizer

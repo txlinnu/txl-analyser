@@ -22,6 +22,20 @@
       "env": { "CHAT_BACKEND": "ollama" },
       "port": 5002,
       "autoPort": true
+    },
+    {
+      "name": "txl-gpt",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["txlgpt_app.py"],
+      "port": 5003,
+      "autoPort": true
+    },
+    {
+      "name": "control-panel",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["control_panel.py"],
+      "port": 5099,
+      "autoPort": true
     }
   ]
 }

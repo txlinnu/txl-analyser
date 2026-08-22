@@ -79,6 +79,8 @@ def stream_reply(
     model: str = DEFAULT_MODEL,
     custom_instructions: str = None,
     image_data_url: str = None,
+    system_prompt: str = None,
+    reasoning_effort: str = None,
 ) -> Iterator[str]:
     """
     Given a conversation history (list of {"role", "content"} dicts, no
@@ -88,8 +90,13 @@ def stream_reply(
     the user's own "Customize" preferences, appended to the system prompt.
     If image_data_url is set, the request is routed to VISION_MODEL
     instead - qwen2.5:7b/14b can't see images, only qwen2.5vl can.
+    `system_prompt`, if set, replaces the default TXL Cloud persona
+    entirely - lets other apps (e.g. txlgpt_app.py) reuse this connector
+    with their own identity instead of TXL Cloud's. `reasoning_effort` is
+    accepted for call-signature parity with txl_cloud.py but ignored here -
+    qwen2.5 isn't a native reasoning model, unlike Groq's gpt-oss.
     """
-    system_prompt = SYSTEM_PROMPT
+    system_prompt = system_prompt or SYSTEM_PROMPT
     if custom_instructions:
         system_prompt += (
             "\n\nThe user has also given you these standing preferences for how "

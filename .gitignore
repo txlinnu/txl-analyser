@@ -8,4 +8,5 @@ scratch_*
 instance/
 *.db
 workspace/
+workspace_txlgpt/
 *.log

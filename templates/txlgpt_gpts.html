@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My GPTs - Txl GPT</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22%2310A37F%22/><text x=%2250%22 y=%2266%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22%23fff%22 font-family=%22sans-serif%22 font-weight=%22700%22>T</text></svg>">
+<style>
+  :root {
+    --bg: #212121; --panel: #2a2a2a; --bubble: #2f2f2f; --text: #ececec; --muted: #9b9b9b;
+    --border: #3a3a3a; --accent: #10A37F; --accent-hover: #189b78;
+    --danger-bg: #3a2422; --danger-text: #ff9e82; --danger-border: #5a3428;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .topbar .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.86rem; margin: 0 0 24px; }
+  .new-form { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 24px; }
+  .new-form h2 { font-size: 0.95rem; margin: 0 0 12px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  input, textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px;
+    background: var(--bg); color: var(--text); font-size: 0.88rem; outline: none; margin-bottom: 14px; font-family: inherit;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  .error { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 8px; padding: 9px 12px; font-size: 0.82rem; margin-bottom: 14px; display: none; }
+  .error.show { display: block; }
+  .create-btn { border: none; background: var(--accent); color: #fff; padding: 9px 18px; border-radius: 9px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .create-btn:hover { background: var(--accent-hover); }
+  .gpt-list { display: flex; flex-direction: column; gap: 10px; }
+  .gpt-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; }
+  .gpt-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--bubble); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0; }
+  .gpt-body { flex: 1; min-width: 0; }
+  .gpt-name { font-weight: 600; font-size: 0.92rem; }
+  .gpt-desc { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .gpt-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .gpt-actions a, .gpt-actions button {
+    border: none; background: var(--bubble); color: var(--text); padding: 6px 12px; border-radius: 7px;
+    font-size: 0.78rem; cursor: pointer; text-decoration: none;
+  }
+  .gpt-actions a:hover, .gpt-actions button:hover { background: var(--border); }
+  .gpt-actions .danger:hover { background: var(--danger-bg); color: var(--danger-text); }
+  .empty { color: var(--muted); font-size: 0.86rem; text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/" style="display:flex;align-items:center;gap:8px;"><span class="mark">T</span></a>
+  <a href="/">← Back to chat</a>
+</div>
+<div class="wrap">
+  <h1>🧩 My GPTs</h1>
+  <p class="sub">Custom personas with their own standing instructions - start a chat "as" one to have it follow those instructions instead of Txl GPT's defaults.</p>
+
+  <div class="error" id="form-error"></div>
+  <div class="new-form">
+    <h2>Create a GPT</h2>
+    <div class="row">
+      <div style="flex:0 0 80px;">
+        <label for="gpt-icon">Icon</label>
+        <input type="text" id="gpt-icon" value="🤖" maxlength="8">
+      </div>
+      <div>
+        <label for="gpt-name">Name</label>
+        <input type="text" id="gpt-name" placeholder="e.g. Study Buddy" maxlength="80">
+      </div>
+    </div>
+    <label for="gpt-desc">Short description (optional)</label>
+    <input type="text" id="gpt-desc" placeholder="What is this GPT for?" maxlength="200">
+    <label for="gpt-instructions">Instructions</label>
+    <textarea id="gpt-instructions" placeholder="e.g. You are a patient tutor who explains concepts with simple analogies and always checks understanding with a follow-up question." maxlength="6000"></textarea>
+    <button class="create-btn" id="create-btn" type="button">Create GPT</button>
+  </div>
+
+  <div class="gpt-list" id="gpt-list">
+    {% for gpt in gpts %}
+    <div class="gpt-card" data-id="{{ gpt.id }}">
+      <div class="gpt-icon">{{ gpt.icon }}</div>
+      <div class="gpt-body">
+        <div class="gpt-name">{{ gpt.name }}</div>
+        {% if gpt.description %}<div class="gpt-desc">{{ gpt.description }}</div>{% endif %}
+        <div class="gpt-actions">
+          <a href="/?gpt={{ gpt.id }}">Start chat</a>
+          <button class="danger delete-btn" data-id="{{ gpt.id }}">Delete</button>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty" id="empty-msg">No custom GPTs yet.</div>
+    {% endfor %}
+  </div>
+</div>
+<script>
+const formError = document.getElementById('form-error');
+function showError(msg) { formError.textContent = msg; formError.classList.add('show'); }
+
+document.getElementById('create-btn').addEventListener('click', async () => {
+  formError.classList.remove('show');
+  const name = document.getElementById('gpt-name').value.trim();
+  const instructions = document.getElementById('gpt-instructions').value.trim();
+  const description = document.getElementById('gpt-desc').value.trim();
+  const icon = document.getElementById('gpt-icon').value.trim() || '🤖';
+  if (!name) { showError('Please enter a name.'); return; }
+  if (!instructions) { showError('Please enter instructions.'); return; }
+  const res = await fetch('/gpts/new', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, instructions, description, icon }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) { showError(data.error || 'Could not create that GPT.'); return; }
+  window.location.reload();
+});
+
+document.querySelectorAll('.delete-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Delete this GPT? Chats started under it keep their history but revert to the default persona.')) return;
+    await fetch(`/gpts/${btn.dataset.id}/delete`, { method: 'POST' });
+    window.location.reload();
+  });
+});
+</script>
+</body>
+</html>

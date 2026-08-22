@@ -1,10 +1,12 @@
 # Deploying for free (Render)
 
-`render.yaml` defines **two** free web services - deploy either or both:
+`render.yaml` defines **three** free web services - deploy any or all:
 - `txl-analyser` → `app.py` (PDF/YouTube summarizer)
 - `txl-cloud` → `chat_app.py` (the chat assistant, with real accounts)
+- `txl-gpt` → `txlgpt_app.py` (the ChatGPT-style app, its own separate
+  accounts/database from TXL Cloud's)
 
-Both get a free `https://<name>.onrender.com` subdomain automatically -
+All three get a free `https://<name>.onrender.com` subdomain automatically -
 reachable from anywhere, no separate domain purchase needed.
 
 ## Deploying TXL Cloud specifically
@@ -49,6 +51,46 @@ database, or every deploy would silently delete everyone's account:
 **Only the Groq backend can be deployed this way** - Ollama needs real
 GPU/CPU compute running locally, which Render's free tier doesn't provide.
 
+## Deploying Txl GPT specifically
+
+Same database situation as TXL Cloud (its own separate accounts/chats,
+but the same "SQLite wipes on every restart" problem) - use a **second**
+free Neon Postgres database (a fresh one, not the one from TXL Cloud
+above, so the two apps' accounts stay independent), and set these
+environment variables when creating the `txl-gpt` service:
+- `TXLGPT_DATABASE_URL` — a Neon connection string (its own database -
+  note the `TXLGPT_` prefix, this is a *different* variable name from
+  TXL Cloud's plain `DATABASE_URL`)
+- `TXLGPT_SECRET_KEY` — any long random string, same reasoning as TXL
+  Cloud's `SECRET_KEY`
+- `GROQ_API_KEY` — your Groq key
+- `TXLGPT_GROQ_API_KEY` — optional, a *third* separate Groq account/quota
+  if you want one independent from both TXL Analyser's and TXL Cloud's
+- `SITE_PASSWORD` / `SIGNUP_INVITE_CODE` — same as TXL Cloud, **strongly
+  recommended** here specifically: Txl GPT's Work mode can run arbitrary
+  shell commands (`run_command`, approval-gated but still real execution)
+  on this server - don't leave signup open on a public URL without at
+  least one of these two gates.
+- `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` — optional, same "Forgot
+  password" email as TXL Cloud - see above for setup.
+- `GEMINI_API_KEY` — powers two real features here, not just a fallback:
+  pasted-image understanding and the 🖼 image-generation button. Free key
+  (no credit card): https://aistudio.google.com/apikey. Leave unset and
+  both quietly fail with a clear "not configured" message instead of
+  erroring.
+
+**Two things worth knowing about Render's free tier specifically:**
+- **Scheduled tasks won't fire while the service is asleep.** Free
+  services spin down after 15 minutes idle (see "What to expect" below) -
+  a task due during that window runs as soon as the next request wakes
+  the service back up, not exactly on time. Fine for "check on this
+  daily-ish," not for anything time-critical.
+- **Work mode's workspace is wiped on every redeploy/restart**, same as
+  the database problem above but there's no fix for this one - files
+  Work mode writes live in `workspace_txlgpt/` on local disk, which
+  Render's free tier doesn't persist. Treat it as scratch space on this
+  deployment, not permanent storage.
+
 Everything's ready to deploy — `render.yaml` and `.gitignore` are
 already set up. These last steps need your own accounts
 (I can't create accounts or log in on your behalf), so here's exactly
@@ -69,12 +111,12 @@ git push
 
 ## 2. Deploy on Render
 
-**Easiest: Blueprint deploy (creates both services at once)**
+**Easiest: Blueprint deploy (creates all three services at once)**
 1. Create a free account at https://render.com (free web services
    historically don't require a credit card — you'll see at signup).
 2. In the Render dashboard: **New +** → **Blueprint**, connect the
-   `txl-analyser` GitHub repo. Render reads `render.yaml` and shows both
-   `txl-analyser` and `txl-cloud` ready to create together.
+   `txl-analyser` GitHub repo. Render reads `render.yaml` and shows
+   `txl-analyser`, `txl-cloud`, and `txl-gpt` ready to create together.
 3. Before deploying, fill in each service's environment variables (Render
    prompts for the `sync: false` ones from `render.yaml`):
    - **txl-analyser**: `GROQ_API_KEY`, and `SITE_PASSWORD` (**strongly
@@ -84,18 +126,22 @@ git push
      string), `SECRET_KEY` (a long random string), and optionally
      `CHAT_GROQ_API_KEY` / `SITE_PASSWORD` — see the TXL Cloud section
      above for details on each
+   - **txl-gpt**: `GROQ_API_KEY`, `TXLGPT_DATABASE_URL` (a *second*, separate
+     Neon connection string), `TXLGPT_SECRET_KEY`, and `SITE_PASSWORD`
+     (**strongly recommended** here specifically - see the Txl GPT section
+     above for why) — see that section for the rest of the optional ones
 4. Click **Apply** / **Deploy**.
 
 **Alternative: create each service manually**, if you'd rather deploy
 just one, or Blueprint isn't available — **New +** → **Web Service** per
 app, filling in Build Command `pip install -r requirements-local.txt`,
-Start Command from `render.yaml` (`gunicorn app:app ...` or
-`gunicorn chat_app:app ...`), Instance Type **Free**, and the same env
-vars listed above for that service.
+Start Command from `render.yaml` (`gunicorn app:app ...`,
+`gunicorn chat_app:app ...`, or `gunicorn txlgpt_app:app ...`), Instance
+Type **Free**, and the same env vars listed above for that service.
 
 Render will build and deploy — takes a few minutes the first time.
-You'll get free URLs like `https://txl-analyser.onrender.com` and
-`https://txl-cloud.onrender.com`.
+You'll get free URLs like `https://txl-analyser.onrender.com`,
+`https://txl-cloud.onrender.com`, and `https://txl-gpt.onrender.com`.
 
 ## 3. YouTube summaries on the live site: a known, unavoidable limit — and the free workaround
 
@@ -143,6 +189,8 @@ code.
 
 ## Verifying it works
 
-Once deployed, open the Render URL. You should see the same TXL
-Analyser page you've been testing locally. Try a PDF or YouTube link —
-if it errors, check the **Logs** tab in the Render dashboard first.
+Once deployed, open the Render URL for whichever service you deployed.
+You should see the same page you've been testing locally - TXL Analyser's
+PDF/YouTube form, TXL Cloud's chat, or Txl GPT's chat. Try sending a
+message or a PDF/YouTube link — if it errors, check the **Logs** tab in
+the Render dashboard first.
