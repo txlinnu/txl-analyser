@@ -20,6 +20,17 @@
   a { color: var(--accent); }
 
   #sidebar { width: 260px; flex-shrink: 0; background: var(--sidebar); display: flex; flex-direction: column; border-right: 1px solid var(--border-soft); height: 100vh; }
+  .mobile-topbar { display: none; }
+  #sidebar-backdrop { display: none; }
+  @media (max-width: 768px) {
+    #sidebar { display: none; position: fixed; top: 0; left: 0; z-index: 60; box-shadow: 4px 0 24px rgba(0,0,0,0.4); }
+    #sidebar.open { display: flex; }
+    #sidebar-backdrop.show { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 55; }
+    .mobile-topbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+    .mobile-topbar .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+    .mobile-topbar .title { font-weight: 700; font-size: 0.95rem; }
+    #sidebar-toggle-btn { border: none; background: none; color: var(--text); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; line-height: 1; }
+  }
   .sb-top { padding: 12px; }
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem; padding: 6px 4px 14px; }
   .brand .mark { width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
@@ -85,8 +96,8 @@
 
   #composer-wrap { padding: 8px 20px 20px; }
   #composer { max-width: 760px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 8px 10px 8px 16px; }
-  .composer-row { display: flex; align-items: flex-end; gap: 8px; }
-  #composer textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; color: var(--text); font-size: 0.95rem; font-family: inherit; max-height: 200px; padding: 8px 0; line-height: 1.4; }
+  .composer-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  #composer textarea { flex: 1 1 auto; min-width: 120px; resize: none; border: none; outline: none; background: transparent; color: var(--text); font-size: 0.95rem; font-family: inherit; max-height: 200px; padding: 8px 0; line-height: 1.4; }
   #composer textarea::placeholder { color: var(--muted); }
   #model-select { background: transparent; color: var(--muted); border: none; font-size: 0.78rem; cursor: pointer; outline: none; }
   #send-btn { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--text); color: var(--bg); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
@@ -123,7 +134,13 @@
   </div>
 </div>
 
+<div id="sidebar-backdrop"></div>
 <div id="main">
+  <div class="mobile-topbar">
+    <button id="sidebar-toggle-btn" type="button" aria-label="Open menu">☰</button>
+    <span class="mark">T</span>
+    <span class="title">Work</span>
+  </div>
   <div id="messages" class="{{ 'landing' if not transcript else '' }}">
     {% if not transcript %}
     <div class="landing-inner">
@@ -171,6 +188,14 @@
 </div>
 
 <script>
+const sidebarEl = document.getElementById('sidebar');
+const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+function openSidebar() { sidebarEl.classList.add('open'); sidebarBackdrop.classList.add('show'); }
+function closeSidebar() { sidebarEl.classList.remove('open'); sidebarBackdrop.classList.remove('show'); }
+if (sidebarToggleBtn) sidebarToggleBtn.addEventListener('click', openSidebar);
+sidebarBackdrop.addEventListener('click', closeSidebar);
+
 const messagesEl = document.getElementById('messages');
 const composerInput = document.getElementById('composer-input');
 const sendBtn = document.getElementById('send-btn');
