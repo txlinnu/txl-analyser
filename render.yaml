@@ -42,6 +42,42 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: CHAT_GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: TXLGPT_SECRET_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+
+  - type: web
+    name: txl-remote-control
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-local.txt
+    startCommand: gunicorn render_control:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
+    envVars:
+      - key: RENDER_API_KEY
+        sync: false
+      - key: REMOTE_CONTROL_PASSWORD
+        sync: false
+
+  - type: web
+    name: txl-gpt
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-local.txt
+    startCommand: gunicorn txlgpt_app:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
       - key: TXLGPT_GROQ_API_KEY
         sync: false
       - key: TXLGPT_DATABASE_URL

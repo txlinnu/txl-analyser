@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TXL Control Panel</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎛️</text></svg>">
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --bg-grad-a: #f9f4ec;
+    --bg-grad-b: #eef2f4;
+    --card: #ffffff;
+    --text: #1c1b19;
+    --muted: #6f6b64;
+    --border: #e6e3dc;
+    --accent: #b45309;
+    --accent-soft: #fdf0e1;
+    --shadow: 0 1px 2px rgba(20,18,14,0.04), 0 8px 24px rgba(20,18,14,0.05);
+    --on: #16a34a;
+    --on-soft: #e9f9ef;
+    --off: #9ca3af;
+    --err: #dc2626;
+    --err-soft: #fdecec;
+    --warn: #d97706;
+    --warn-soft: #fdf1e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181715;
+      --bg-grad-a: #1d1a16;
+      --bg-grad-b: #15191c;
+      --card: #221f1c;
+      --text: #eeece7;
+      --muted: #a19b90;
+      --border: #37332c;
+      --accent: #e0a458;
+      --accent-soft: #2e2419;
+      --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.25);
+      --on: #4ade80;
+      --on-soft: #123222;
+      --off: #6b6560;
+      --err: #ff8080;
+      --err-soft: #2e1c1c;
+      --warn: #f0b96a;
+      --warn-soft: #2e2419;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, var(--bg-grad-a), transparent),
+      radial-gradient(1100px 500px at 100% 0%, var(--bg-grad-b), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 48px 20px 90px; }
+  h1 { font-size: 1.7rem; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
+  .role-badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700;
+    color: var(--accent); background: var(--accent-soft); border: 1px solid var(--border);
+    padding: 4px 11px; border-radius: 999px; margin-bottom: 26px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .card-title { font-size: 1.15rem; font-weight: 650; margin: 0 0 4px; }
+  .card-desc { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+  .controls { display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap; }
+
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; background: var(--bg); }
+  .seg button {
+    border: none; background: transparent; color: var(--muted);
+    font-size: 0.82rem; font-weight: 600; padding: 6px 14px; border-radius: 999px;
+    cursor: pointer; font-family: inherit;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .seg button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+  .switch { position: relative; width: 46px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: var(--off); border-radius: 999px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .slider::before {
+    content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  input:checked + .slider { background: var(--on); }
+  input:checked + .slider::before { transform: translateX(20px); }
+  input:disabled + .slider { opacity: 0.5; cursor: default; }
+
+  .body-row { display: flex; align-items: center; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+  .row-block { display: flex; align-items: center; gap: 8px; }
+  .row-label { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+
+  .status-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--off); flex: none; }
+  .dot.running, .dot.live { background: var(--on); box-shadow: 0 0 0 3px var(--on-soft); }
+  .dot.starting, .dot.checking, .dot.waking { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: pulse 1s infinite; }
+  .dot.error, .dot.unreachable { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+  .dot.suspended, .dot.not_deployed { background: var(--off); }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+  .status-text { font-size: 0.85rem; color: var(--muted); }
+  .status-text a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .status-text a:hover { text-decoration: underline; }
+
+  .log {
+    margin-top: 12px; padding: 10px 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.74rem; color: var(--muted); white-space: pre-wrap;
+    max-height: 160px; overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎛️ TXL Control Panel</h1>
+  <p class="sub">Online = the real deployed website on Render - the switch suspends/resumes it for real. Local = run it right here on this PC.</p>
+  <div id="role-badge"></div>
+  <div id="cards"></div>
+</div>
+
+<script>
+const cardsEl = document.getElementById("cards");
+const roleBadgeEl = document.getElementById("role-badge");
+let localBackendChoice = {};
+let myRole = "full"; // "full" (opened from this PC) or "online_only" (opened remotely, e.g. phone)
+
+const BACKEND_LABEL = { groq: "Groq", ollama: "Ollama" };
+const ONLINE_LABEL = {
+  checking: "Checking&hellip;",
+  live: "Live",
+  waking: "Waking up (Render free tier was asleep)&hellip;",
+  unreachable: "Unreachable right now",
+  suspended: "Suspended",
+  not_deployed: "Not deployed yet",
+  error: "Couldn't check status (Render API issue) - see below",
+};
+
+function render(data) {
+  cardsEl.innerHTML = "";
+  for (const [key, s] of Object.entries(data)) {
+    if (!(key in localBackendChoice)) localBackendChoice[key] = s.local.backend;
+    const forcedOnline = myRole === "online_only";
+    const isOnline = forcedOnline ? true : s.location === "online";
+    const activeBackend = s.local.status === "stopped" ? localBackendChoice[key] : s.local.backend;
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const locSeg = (!forcedOnline) ? `
+      <div class="seg" data-role="location" data-key="${key}">
+        <button data-location="local" class="${!isOnline ? "active" : ""}">Local</button>
+        <button data-location="online" class="${isOnline ? "active" : ""}" ${!s.live_url ? "disabled title=\"Not deployed yet\"" : ""}>Online</button>
+      </div>` : "";
+
+    let body = "";
+    if (isOnline) {
+      const link = s.live_url ? ` &middot; <a href="${s.live_url}" target="_blank">open ${s.live_url.replace("https://", "")}</a>` : "";
+      const canToggle = !!s.live_url && s.online.status !== "not_deployed" && s.online.status !== "error";
+      const checked = canToggle && s.online.status !== "suspended";
+      const disabled = !canToggle || s.online.status === "checking";
+      body = `
+        <div class="body-row">
+          <label class="switch">
+            <input type="checkbox" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} data-key="${key}" data-role="render-switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="status-row">
+          <span class="dot ${s.online.status}"></span>
+          <span class="status-text">${ONLINE_LABEL[s.online.status] || s.online.status}${s.online.status !== "not_deployed" ? link : ""}</span>
+        </div>`;
+    } else {
+      const backendSeg = s.backends.length > 1 ? `
+        <div class="row-block">
+          <span class="row-label">Backend</span>
+          <div class="seg" data-role="backend" data-key="${key}">
+            ${s.backends.map(b => `<button data-backend="${b}" class="${b === activeBackend ? "active" : ""}">${BACKEND_LABEL[b]}</button>`).join("")}
+          </div>
+        </div>` : "";
+
+      const checked = (s.local.status === "running" || s.local.status === "starting") ? "checked" : "";
+      const disabled = s.local.status === "starting" ? "disabled" : "";
+
+      let statusText;
+      if (s.local.status === "running") statusText = `Running &middot; <a href="http://127.0.0.1:${s.local.port}" target="_blank">open http://127.0.0.1:${s.local.port}</a>`;
+      else if (s.local.status === "starting") statusText = "Starting&hellip;";
+      else if (s.local.status === "error") statusText = "Failed to start &mdash; see log below";
+      else statusText = "Stopped";
+
+      body = `
+        <div class="body-row">
+          ${backendSeg}
+          <label class="switch">
+            <input type="checkbox" ${checked} ${disabled} data-key="${key}" data-role="local-switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="status-row">
+          <span class="dot ${s.local.status}"></span>
+          <span class="status-text">${statusText}</span>
+        </div>
+        ${s.local.status === "error" ? `<div class="log" id="log-${key}">loading log&hellip;</div>` : ""}`;
+    }
+
+    card.innerHTML = `
+      <div class="card-top">
+        <div>
+          <p class="card-title">${s.label}</p>
+          <p class="card-desc">${s.description}</p>
+        </div>
+        <div class="controls">${locSeg}</div>
+      </div>
+      ${body}
+    `;
+    cardsEl.appendChild(card);
+
+    if (!isOnline && s.local.status === "error") fetchLog(key);
+  }
+
+  cardsEl.querySelectorAll('[data-role="location"] button').forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      setLocation(btn.dataset.key, btn.dataset.location);
+    });
+  });
+
+  cardsEl.querySelectorAll('[data-role="backend"] button').forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.parentElement.dataset.key;
+      const backend = btn.dataset.backend;
+      localBackendChoice[key] = backend;
+      const s = rendered_full[key];
+      if (s.local.status === "running" || s.local.status === "starting") {
+        startService(key, backend);
+      } else {
+        render(rendered_full);
+      }
+    });
+  });
+
+  cardsEl.querySelectorAll('input[data-role="local-switch"]').forEach(cb => {
+    cb.addEventListener("change", () => {
+      const key = cb.dataset.key;
+      if (cb.checked) startService(key, localBackendChoice[key]);
+      else stopService(key);
+    });
+  });
+
+  cardsEl.querySelectorAll('input[data-role="render-switch"]').forEach(cb => {
+    cb.addEventListener("change", () => {
+      const key = cb.dataset.key;
+      renderToggle(key, cb.checked ? "resume" : "suspend");
+    });
+  });
+}
+
+let rendered_full = {};
+
+async function fetchLog(key) {
+  const res = await fetch(`/api/log/${key}`);
+  const data = await res.json();
+  const el = document.getElementById(`log-${key}`);
+  if (el) el.textContent = data.log || "(no log output yet)";
+}
+
+async function setLocation(key, location) {
+  await fetch("/api/location", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: key, location }),
+  });
+  poll();
+}
+
+async function startService(key, backend) {
+  await fetch("/api/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: key, backend }),
+  });
+  poll();
+}
+
+async function stopService(key) {
+  await fetch("/api/stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: key }),
+  });
+  poll();
+}
+
+async function renderToggle(key, action) {
+  await fetch(`/api/render/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: key }),
+  });
+  poll();
+}
+
+async function poll() {
+  const res = await fetch("/api/status");
+  const data = await res.json();
+  rendered_full = data;
+  render(data);
+}
+
+async function init() {
+  const roleRes = await fetch("/api/role");
+  const roleData = await roleRes.json();
+  myRole = roleData.role;
+  roleBadgeEl.innerHTML = myRole === "full"
+    ? `<span class="role-badge">🖥️ Full control (this PC)</span>`
+    : `<span class="role-badge">📱 Online-only (remote)</span>`;
+  poll();
+  setInterval(poll, 1500);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TXL Remote Control</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>">
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --bg-grad-a: #f9f4ec;
+    --bg-grad-b: #eef2f4;
+    --card: #ffffff;
+    --text: #1c1b19;
+    --muted: #6f6b64;
+    --border: #e6e3dc;
+    --accent: #b45309;
+    --accent-soft: #fdf0e1;
+    --shadow: 0 1px 2px rgba(20,18,14,0.04), 0 8px 24px rgba(20,18,14,0.05);
+    --on: #16a34a;
+    --on-soft: #e9f9ef;
+    --off: #9ca3af;
+    --err: #dc2626;
+    --err-soft: #fdecec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181715;
+      --bg-grad-a: #1d1a16;
+      --bg-grad-b: #15191c;
+      --card: #221f1c;
+      --text: #eeece7;
+      --muted: #a19b90;
+      --border: #37332c;
+      --accent: #e0a458;
+      --accent-soft: #2e2419;
+      --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.25);
+      --on: #4ade80;
+      --on-soft: #123222;
+      --off: #6b6560;
+      --err: #ff8080;
+      --err-soft: #2e1c1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, var(--bg-grad-a), transparent),
+      radial-gradient(1100px 500px at 100% 0%, var(--bg-grad-b), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 600px; margin: 0 auto; padding: 48px 20px 90px; }
+  h1 { font-size: 1.5rem; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.92rem; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .card-title { font-size: 1.1rem; font-weight: 650; margin: 0 0 4px; }
+  .card-desc { color: var(--muted); font-size: 0.85rem; margin: 0 0 10px; }
+
+  .switch { position: relative; width: 46px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: var(--off); border-radius: 999px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .slider::before {
+    content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform 0.15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  input:checked + .slider { background: var(--on); }
+  input:checked + .slider::before { transform: translateX(20px); }
+  input:disabled + .slider { opacity: 0.5; cursor: default; }
+
+  .status-row { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--off); flex: none; }
+  .dot.live { background: var(--on); box-shadow: 0 0 0 3px var(--on-soft); }
+  .dot.checking, .dot.waking { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: pulse 1s infinite; }
+  .dot.error, .dot.unreachable { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+  .dot.suspended { background: var(--off); }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+  .status-text { font-size: 0.85rem; color: var(--muted); }
+  .status-text a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .status-text a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📡 TXL Remote Control</h1>
+  <p class="sub">Suspend or resume the live sites - works from anywhere, any time, whether your PC is on or off.</p>
+  <div id="cards"></div>
+</div>
+
+<script>
+const cardsEl = document.getElementById("cards");
+const LABEL = {
+  checking: "Checking&hellip;",
+  live: "Live",
+  waking: "Waking up&hellip;",
+  unreachable: "Unreachable right now",
+  suspended: "Suspended",
+  error: "Couldn't check status",
+};
+
+function render(data) {
+  cardsEl.innerHTML = "";
+  for (const [key, s] of Object.entries(data)) {
+    const canToggle = s.online.status !== "error";
+    const checked = canToggle && s.online.status !== "suspended";
+    const disabled = !canToggle || s.online.status === "checking";
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div>
+        <p class="card-title">${s.label}</p>
+        <p class="card-desc">${s.description}</p>
+        <div class="status-row">
+          <span class="dot ${s.online.status}"></span>
+          <span class="status-text">${LABEL[s.online.status] || s.online.status} &middot; <a href="${s.live_url}" target="_blank">open</a></span>
+        </div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} data-key="${key}">
+        <span class="slider"></span>
+      </label>
+    `;
+    cardsEl.appendChild(card);
+  }
+
+  cardsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener("change", () => toggle(cb.dataset.key, cb.checked ? "resume" : "suspend"));
+  });
+}
+
+async function toggle(key, action) {
+  await fetch(`/api/render/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service: key }),
+  });
+  poll();
+}
+
+async function poll() {
+  const res = await fetch("/api/status");
+  render(await res.json());
+}
+
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

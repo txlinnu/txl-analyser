@@ -36,6 +36,13 @@
       "runtimeArgs": ["control_panel.py"],
       "port": 5099,
       "autoPort": true
+    },
+    {
+      "name": "render-control",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["render_control.py"],
+      "port": 5098,
+      "autoPort": true
     }
   ]
 }
