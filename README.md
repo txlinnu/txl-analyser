@@ -186,13 +186,16 @@ are noticeably more reliable than asking for several actions at once.
 
 ## Txl GPT (ChatGPT-style app)
 
-A separate, standalone ChatGPT-style web app — [`txlgpt_app.py`](txlgpt_app.py) —
-its own accounts, its own database (`instance/txlgpt.db`), its own sidebar
-chat history, streamed replies, image upload, all independent from TXL
-Cloud (`chat_app.py`) so the two can run side by side without sharing any
-data. It reuses TXL Cloud's Groq/Ollama connector modules
-([`txl_cloud.py`](txl_cloud.py) / [`txl_cloud_local.py`](txl_cloud_local.py))
-under the hood since those are generic backends, not tied to chat_app.py.
+A separate, standalone ChatGPT-style web app — [`txlgpt_app.py`](txlgpt_app.py).
+**Genuinely independent from TXL Cloud (`chat_app.py`)**, not just at the
+data layer: its own accounts, own database (`instance/txlgpt.db`), own
+workspace folder (`workspace_txlgpt/`), and its own copies of every
+connector module it uses -
+[`txlgpt_groq.py`](txlgpt_groq.py) / [`txlgpt_ollama.py`](txlgpt_ollama.py) (chat backends),
+[`txlgpt_gemini.py`](txlgpt_gemini.py) (vision + image generation), and
+[`txlgpt_code_agent.py`](txlgpt_code_agent.py) (Work mode's tool engine).
+No shared source files, no shared runtime state, no shared identity - the
+two apps just happen to live in the same repo.
 
 ```bash
 python txlgpt_app.py
@@ -200,7 +203,7 @@ python txlgpt_app.py
 Open **http://127.0.0.1:5003**, sign up with an email + password, and start
 chatting.
 
-Same two interchangeable backends as TXL Cloud, picked with `TXLGPT_BACKEND`:
+Two interchangeable backends, picked with `TXLGPT_BACKEND`:
 
 **bash:**
 ```bash
@@ -211,40 +214,75 @@ TXLGPT_BACKEND=ollama TXLGPT_PORT=5004 python txlgpt_app.py
 $env:TXLGPT_BACKEND='ollama'; $env:TXLGPT_PORT='5004'; python txlgpt_app.py
 ```
 
-Uses the same `GROQ_API_KEY`/`CHAT_GROQ_API_KEY` as TXL Cloud (see
-`.env.example`) - set `TXLGPT_SECRET_KEY` for the session cookie in
-production.
+### Running it on another PC
+
+Nothing here is tied to this machine - to run it anywhere else:
+1. Clone this repo (or copy it) onto the other PC.
+2. `pip install -r requirements-local.txt` (Python 3.10+).
+3. Copy `.env.example` to `.env` and fill in at least `GROQ_API_KEY` (free,
+   no credit card: https://console.groq.com/keys). `TXLGPT_GROQ_API_KEY`
+   is optional - Txl GPT falls back to `GROQ_API_KEY` if it's unset.
+4. `python txlgpt_app.py` → open http://127.0.0.1:5003.
+
+That's the whole setup - no machine-specific paths or config anywhere in
+the code. For the Ollama backend specifically, that other PC also needs
+[Ollama](https://ollama.com/download) installed with a model pulled (see
+the `TXLGPT_BACKEND=ollama` example above).
 
 **What's included:**
 - Accounts (signup/login/logout), forgot/reset password (needs
-  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` configured - same as TXL Cloud's,
-  see `.env.example`; without it the page just says so plainly).
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` configured - see `.env.example`;
+  without it the page just says so plainly).
 - Persisted chat history, streaming replies, regenerate, "Auto" model
-  routing, image upload/vision.
+  routing, image upload/vision (paste an image straight into the composer).
 - **Pinned chats** and **Projects** (folders) - sidebar is grouped into
   Pinned / Projects / Chats, like ChatGPT's. Pin, move, or delete a chat
   from its "⋯" menu; make a project with "+ New project".
+- **Custom GPTs** (🧩 in the sidebar, at `/gpts`) - create a persona with
+  its own standing instructions; starting a chat under it replaces Txl
+  GPT's default system prompt with that GPT's own.
+- **Memory** (🧠 in the sidebar, at `/memory`) - facts remembered across
+  *every* conversation, not just one. Say "remember that ..." in any chat
+  to save one automatically, or manage them directly on the page.
 - **Plugins panel** (🔌 in the sidebar) - currently one built-in plugin,
   **Web Search** (deterministic DuckDuckGo grounding, same approach as
   `pdf_research_agent_local.py` - not left up to the model to decide
   whether to search). Toggle it from the panel or the composer's 🌐
   button. This is a seed for a plugin system, not a marketplace - one
   real, working plugin rather than a facade.
+- **Deep Research** (🔬 in the composer) - like Web Search, but splits the
+  question into several angles, searches each with more sources, and asks
+  for a structured, multi-section report instead of one grounded paragraph.
+- **Thinking** (🧠 in the composer, Groq backend only) - for chat, passes
+  `reasoning_effort=high` to Groq's native-reasoning `gpt-oss` models. For
+  image generation, does a planning pass (asks the model to expand/improve
+  the prompt) before actually generating.
 - **Image generation** (🖼 in the composer) - via Gemini's native image
-  output, needs `GEMINI_API_KEY` (same key as TXL Cloud's Gemini
-  fallback). Uses `IMAGE_MODEL` in `txl_gemini.py` (override with
-  `GEMINI_IMAGE_MODEL` if Google renames/retires it). Image generation
-  draws from its own separate free-tier quota from regular chat - it's
-  common to hit a 429 on the image quota even when chat is working fine.
-- **Scheduled tasks** (🕐 in the sidebar) - a prompt that runs once, daily
-  at a set time, or on a fixed interval. Runs via an in-process background
-  thread that checks for due tasks every 30s, so tasks only fire while
-  `txlgpt_app.py` itself is running (same limitation as any local dev
-  app - not a hosted cron service). Results land in a new conversation,
-  linked from the task's "View results" link.
+  output, needs `GEMINI_API_KEY`. Uses `IMAGE_MODEL` in `txlgpt_gemini.py`
+  (override with `GEMINI_IMAGE_MODEL` if Google renames/retires it). Draws
+  from its own separate free-tier quota from regular chat - it's common to
+  hit a 429 on the image quota even when chat is working fine.
+- **Scheduled tasks** (🕐 in the sidebar, at `/scheduled`) - a prompt that
+  runs once, daily at a set time, or on a fixed interval. Runs via an
+  in-process background thread that checks for due tasks every 30s, so
+  tasks only fire while `txlgpt_app.py` itself is running (or, on Render,
+  while the service isn't spun down - see DEPLOY.md). Results land in a
+  new conversation, linked from the task's "View results" link.
+- **Work mode** (💼 in the sidebar, at `/work`) - a tool-using agent for
+  multi-step tasks: it can search the web, read/write files, and run
+  shell commands inside a sandboxed per-user workspace
+  (`workspace_txlgpt/user_<id>/`). Read-only actions (search, read files)
+  run automatically; anything that writes a file or runs a command always
+  stops and shows you exactly what's about to happen first - a diff for
+  file writes, the exact command for shell commands - and waits for you to
+  click **Approve** or **Deny**. Nothing touches disk or runs until you
+  approve it. Point it at a real project instead of the sandbox by setting
+  `TXLGPT_ALLOW_CUSTOM_WORKSPACE=1` and `TXLGPT_CODE_WORKSPACE` (local,
+  single-user installs only - **never enable this on a public deployment**,
+  it lets Work mode reach anywhere on disk the process can).
 
-**Not included:** Code mode, Deep check, artifacts side panel, a
-third-party plugin marketplace (only Web Search exists today).
+**Not included:** artifacts side panel, a third-party plugin marketplace
+(only Web Search exists today).
 
 ## Command line
 

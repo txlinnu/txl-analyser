@@ -1,11 +1,12 @@
 """
-TXL Cloud - Fully Local Edition
+Txl GPT - Ollama backend
 ------------------------------------
-$0 cost AND fully private AND unlimited: runs entirely on your own PC via
+$0 cost, fully private, unlimited: runs entirely on your own PC via
 Ollama - no API key, no daily token cap, nothing ever sent anywhere. The
-trade-off vs the Groq edition (txl_cloud.py) is speed and setup: replies
-are only as fast as your hardware, and you need to install Ollama and
-download a model (several GB) first.
+trade-off vs the Groq edition (txlgpt_groq.py) is speed and setup:
+replies are only as fast as your hardware, and you need to install
+Ollama and download a model (several GB) first. A separate file from TXL
+Cloud's Ollama connector, on purpose - the two apps share no code.
 
 Setup (one-time), on the machine that will run this:
     1. Install Ollama: https://ollama.com/download
@@ -15,15 +16,7 @@ Setup (one-time), on the machine that will run this:
          ollama pull qwen2.5vl:7b    (optional - needed to understand pasted images, ~6 GB)
     3. pip install ollama
 
-Then run chat_app.py with CHAT_BACKEND=ollama set (see README.md).
-
-Sizing note: tuned for a machine with 32GB RAM + a small (~4GB) GPU -
-Ollama automatically offloads what fits onto the GPU and runs the rest on
-CPU. Bigger models are noticeably slower than Groq's cloud replies (rough
-ballpark: a few tokens/second on that kind of hardware, vs near-instant)
-- that's the cost of "unlimited and private" over "fast". If qwen2.5:14b
-feels too slow, use qwen2.5:7b (the default) or an even smaller model of
-your choice (pull it, then add it to MODEL_CHOICES in chat_app.py).
+Then run txlgpt_app.py with TXLGPT_BACKEND=ollama set (see README.md).
 """
 
 import json
@@ -39,29 +32,30 @@ MAX_HISTORY_MESSAGES = 24  # ~12 user/assistant turns kept; oldest trimmed first
 # model instead. Pull it separately: ollama pull qwen2.5vl:7b (~6 GB)
 VISION_MODEL = "qwen2.5vl:7b"
 
-SYSTEM_PROMPT = """You are TXL Cloud, a free, private, helpful AI chat \
-assistant. You're inspired by Claude's helpful/honest/concise style, but \
-you are a separate, independent assistant, running entirely locally on \
-this machine via an open-weight model - if asked, be upfront about that \
-rather than claiming to be Claude itself. Be clear, warm, and concise. \
-Prioritize being accurate and substantive over sounding confident - give \
-real, specific, correct answers with the actual details/numbers/names \
-requested; if you're not sure of something, say so plainly rather than \
-guessing or filling space with vague, generic-sounding filler. Don't \
-hedge on things you do know just to seem cautious. Use markdown \
-(headings, lists, code blocks) when it genuinely helps readability, but \
-don't over-format short answers. You're also a capable coding assistant: \
-when asked for code, write correct, working code and always put it in a \
-fenced code block tagged with the right language (e.g. ```python) so it \
-can be syntax-highlighted - explain briefly around it, but don't pad \
-with unnecessary commentary. Fenced ```html or ```svg code blocks get an \
-actual live rendered preview shown to the user (not just syntax-highlighted \
-text) - so when a webpage, UI mockup, game, chart, or diagram would \
-genuinely help, write one as a single self-contained ```html block with \
-any CSS/JS inlined (no external file references, since nothing else can \
-be loaded), or a ```svg block for a static graphic. Only do this when \
-it's actually the right way to answer - don't force an HTML block onto a \
-request that's better served by a normal text or code answer."""
+SYSTEM_PROMPT = """You are Txl GPT, a free, helpful AI chat assistant. \
+You are your own independent product, running entirely locally on this \
+machine via an open-weight model - if asked, be upfront about that \
+rather than claiming to be OpenAI's ChatGPT or Anthropic's Claude. Be \
+clear and warm. Prioritize being accurate and substantive over sounding \
+confident - give real, specific, correct answers with the actual \
+details/numbers/names requested; if you're not sure of something, say so \
+plainly rather than guessing or filling space with vague, generic-sounding \
+filler. Don't hedge on things you do know just to seem cautious.
+
+Match your depth to the request. A quick factual question gets a short, \
+direct answer. But when asked to explain, analyze, describe, or walk \
+through something substantial, go deep: don't just list what's there, \
+explain what each part actually means and why it matters, the way a \
+knowledgeable person would walk a colleague through it. Use headings and \
+bullets to structure a longer explanation, and draw on what you actually \
+know about the subject to add real context per point. Thin, list-only \
+answers to substantial questions are a failure mode - elaborate. Use \
+markdown (headings, lists, code blocks) when it genuinely helps \
+readability. You're also a capable coding assistant: when asked for code, \
+write correct, working code and always put it in a fenced code block \
+tagged with the right language (e.g. ```python) so it can be \
+syntax-highlighted - explain briefly around it, but don't pad with \
+unnecessary commentary."""
 
 
 def trim_history(history: List[dict]) -> List[dict]:
@@ -79,17 +73,23 @@ def stream_reply(
     model: str = DEFAULT_MODEL,
     custom_instructions: str = None,
     image_data_url: str = None,
+    system_prompt: str = None,
+    reasoning_effort: str = None,
 ) -> Iterator[str]:
     """
     Given a conversation history (list of {"role", "content"} dicts, no
     system message - just user/assistant turns), stream the assistant's
     reply back as text chunks. Talks to a local Ollama server
     (http://127.0.0.1:11434 by default). `custom_instructions`, if set, is
-    the user's own "Customize" preferences, appended to the system prompt.
-    If image_data_url is set, the request is routed to VISION_MODEL
-    instead - qwen2.5:7b/14b can't see images, only qwen2.5vl can.
+    the user's own standing preferences, appended to the system prompt.
+    `system_prompt`, if set, replaces the default Txl GPT persona (used
+    when a chat is running under a custom GPT). If image_data_url is set,
+    the request is routed to VISION_MODEL instead - qwen2.5:7b/14b can't
+    see images, only qwen2.5vl can. `reasoning_effort` is accepted for
+    call-signature parity with txlgpt_groq.py but ignored here - qwen2.5
+    isn't a native reasoning model, unlike Groq's gpt-oss.
     """
-    system_prompt = SYSTEM_PROMPT
+    system_prompt = system_prompt or SYSTEM_PROMPT
     if custom_instructions:
         system_prompt += (
             "\n\nThe user has also given you these standing preferences for how "
@@ -127,8 +127,8 @@ def stream_reply(
 def _ollama_ready_messages(messages: List[dict]) -> List[dict]:
     """Ollama's client validates tool_calls[].function.arguments as a dict
     (unlike Groq/OpenAI, which want a JSON string there) - our shared
-    in-memory history keeps it as a dict already (see chat_app.py's
-    _tool_call_message), so this just guards against a stray string."""
+    in-memory history keeps it as a dict already, so this just guards
+    against a stray string."""
     prepared = []
     for m in messages:
         if m.get("tool_calls"):
@@ -151,8 +151,8 @@ def _ollama_ready_messages(messages: List[dict]) -> List[dict]:
 def run_with_tools(messages: List[dict], tools: List[dict], model: str = DEFAULT_MODEL) -> Tuple[str, List[dict]]:
     """
     One non-streaming turn with function-calling tools available (used by
-    the Code-mode agent, not the regular chat). `messages` should already
-    include the system prompt. Returns (text, tool_calls):
+    Work mode, not regular chat). `messages` should already include the
+    system prompt. Returns (text, tool_calls):
       - if the model wants to call tools: (None, [{"id","name","arguments"}, ...])
       - if the model answered in text: (text, [])
     """
@@ -189,7 +189,7 @@ def run_with_tools(messages: List[dict], tools: List[dict], model: str = DEFAULT
 def main():
     """Quick CLI smoke test: a single-turn chat from argv."""
     if len(sys.argv) < 2:
-        sys.exit('Usage: python txl_cloud_local.py "your message"')
+        sys.exit('Usage: python txlgpt_ollama.py "your message"')
     message = " ".join(sys.argv[1:])
     for chunk in stream_reply([{"role": "user", "content": message}]):
         print(chunk, end="", flush=True)

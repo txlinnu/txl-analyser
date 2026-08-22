@@ -18,15 +18,33 @@ db = SQLAlchemy()
 
 
 def init_db(app):
-    database_url = os.environ.get("TXLGPT_DATABASE_URL", "sqlite:///txlgpt.db")
+    # .strip() matters: os.environ.get(key, default) only falls back to
+    # `default` when the key is entirely UNSET - if a host's dashboard has
+    # the variable present but left blank (a common copy/paste mistake),
+    # it's "" (or whitespace), which isn't a valid URL and would otherwise
+    # crash SQLAlchemy with a cryptic "Could not parse SQLAlchemy URL"
+    # instead of just falling back to SQLite like an unset value would.
+    database_url = (os.environ.get("TXLGPT_DATABASE_URL") or "").strip().strip("'\"")
+    if not database_url:
+        database_url = "sqlite:///txlgpt.db"
     # Some hosts (Render, Heroku-style) hand out postgres:// - SQLAlchemy 1.4+/2.x wants postgresql://
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    db.init_app(app)
+    try:
+        db.init_app(app)
+        with app.app_context():
+            db.create_all()
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not connect to the database at TXLGPT_DATABASE_URL "
+            f"(starts with {database_url[:20]!r}...). Double-check it's "
+            f"the full connection string from your Postgres provider "
+            f"(e.g. Neon), starting with postgresql:// or postgres://, "
+            f"with no extra quotes or spaces around it. Original error: {e}"
+        ) from e
     with app.app_context():
-        db.create_all()
         _migrate(db.engine)
 
 

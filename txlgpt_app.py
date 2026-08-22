@@ -2,23 +2,25 @@
 Txl GPT - Web UI
 ------------------------------------
 A standalone ChatGPT-style web app: real accounts, persisted chat
-history in a sidebar, streamed replies, image upload/vision. Runs as
-its own process on its own port - completely separate from app.py (TXL
-Analyser) and chat_app.py (TXL Cloud), with its own database
-(txlgpt.db) and its own accounts, so all three can run side by side.
+history in a sidebar, streamed replies, image upload/vision, Work mode
+(a tool-using agent), scheduled tasks, custom GPTs, and cross-chat
+memory. Runs as its own process on its own port, with its own database
+(txlgpt.db), its own accounts, its own workspace folder, and its own
+connector modules (txlgpt_groq.py / txlgpt_ollama.py / txlgpt_gemini.py /
+txlgpt_code_agent.py) - deliberately independent from app.py (TXL
+Analyser) and chat_app.py (TXL Cloud). No shared code, no shared
+runtime state, no shared identity - a genuinely separate product that
+happens to live in the same repo.
 
-Two interchangeable reply backends, picked with TXLGPT_BACKEND (reuses
-the same battle-tested backend modules as TXL Cloud - txl_cloud.py /
-txl_cloud_local.py - since they're generic Groq/Ollama connectors, not
-specific to chat_app.py):
-  - groq (default)  txl_cloud.py       - Groq's free cloud API. Fast,
-                                          but capped at a daily
-                                          free-tier token quota.
-  - ollama           txl_cloud_local.py - runs entirely on this
-                                          machine via Ollama. No cap,
-                                          nothing ever leaves this PC,
-                                          but needs Ollama installed
-                                          and a model pulled first.
+Two interchangeable reply backends, picked with TXLGPT_BACKEND:
+  - groq (default)  txlgpt_groq.py   - Groq's free cloud API. Fast, but
+                                        capped at a daily free-tier
+                                        token quota.
+  - ollama           txlgpt_ollama.py - runs entirely on this machine
+                                         via Ollama. No cap, nothing
+                                         ever leaves this PC, but needs
+                                         Ollama installed and a model
+                                         pulled first.
 
 Run:
     python txlgpt_app.py                                        # Groq, port 5003
@@ -35,7 +37,6 @@ import threading
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import markdown as md
 from flask import Flask, Response, g, jsonify, redirect, render_template, request, session, stream_with_context, url_for
@@ -49,18 +50,9 @@ try:
 except ImportError:
     pass
 
-# Must happen before `import code_agent` - it reads CODE_WORKSPACE at import
-# time to pick its WORKSPACE_ROOT. Without this, an unset CODE_WORKSPACE
-# would default (in code_agent.py) to the same workspace/ folder chat_app.py
-# (TXL Cloud) also uses - two separate apps, two separate user-id sequences,
-# so e.g. both apps' "user 3" would land in the same workspace/user_3/
-# folder. setdefault() still lets a real CODE_WORKSPACE in the environment
-# (e.g. someone deliberately pointing Work mode at a real project) win.
-os.environ.setdefault("CODE_WORKSPACE", str(Path(__file__).resolve().parent / "workspace_txlgpt"))
-
-import code_agent
 import mailer
-import txl_gemini
+import txlgpt_code_agent as code_agent
+import txlgpt_gemini as gemini
 import txlgpt_models as models
 from pdf_research_agent_local import web_search
 
@@ -78,7 +70,7 @@ limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="m
 BACKEND = os.environ.get("TXLGPT_BACKEND", "groq").strip().lower()
 
 if BACKEND == "ollama":
-    import txl_cloud_local as agent
+    import txlgpt_ollama as agent
     FAST_MODEL = "qwen2.5:7b"
     ACCURATE_MODEL = "qwen2.5:14b"
     MODEL_CHOICES = [
@@ -88,7 +80,7 @@ if BACKEND == "ollama":
     ]
     HEADER_BADGE = "Local · Unlimited"
 else:
-    import txl_cloud as agent
+    import txlgpt_groq as agent
     ACCURATE_MODEL = "openai/gpt-oss-120b"
     FAST_MODEL = "openai/gpt-oss-20b"
     MODEL_CHOICES = [
@@ -100,9 +92,6 @@ else:
 
 VALID_MODELS = {m for m, _ in MODEL_CHOICES}
 
-# Own identity, separate from TXL Cloud - even though this reuses TXL
-# Cloud's Groq/Ollama connector modules under the hood (see module
-# docstring), the model must never call itself "TXL Cloud" here.
 SYSTEM_PROMPT = """You are Txl GPT, a free, helpful AI chat assistant. \
 You are your own independent product, built to run on a free open-weight \
 model rather than OpenAI's ChatGPT or Anthropic's Claude - if asked, be \
@@ -526,7 +515,7 @@ def chat_home():
         pygments_css=PYGMENTS_CSS,
         header_badge=HEADER_BADGE,
         user_email=user.email,
-        image_gen_available=txl_gemini.is_configured(),
+        image_gen_available=gemini.is_configured(),
         thinking_available=(BACKEND != "ollama"),
     )
 
@@ -821,7 +810,7 @@ def generate_image_route():
         return jsonify({"error": "Please describe the image you want."}), 400
     if len(prompt) > 2000:
         return jsonify({"error": "That prompt is too long (max 2000 characters)."}), 400
-    if not txl_gemini.is_configured():
+    if not gemini.is_configured():
         return jsonify({"error": "Image generation isn't set up on this deployment yet - ask whoever runs it to configure GEMINI_API_KEY."}), 400
 
     conv_id = data.get("conv_id")
@@ -837,10 +826,10 @@ def generate_image_route():
 
     used_prompt = prompt
     if thinking:
-        used_prompt = txl_gemini.expand_image_prompt(prompt)
+        used_prompt = gemini.expand_image_prompt(prompt)
 
     try:
-        image_data_url = txl_gemini.generate_image(used_prompt)
+        image_data_url = gemini.generate_image(used_prompt)
     except Exception as e:
         traceback.print_exc(file=sys.stderr)
         return jsonify({"error": str(e)}), 500
@@ -1017,12 +1006,11 @@ if os.environ.get("FLASK_DEBUG") != "1" or os.environ.get("WERKZEUG_RUN_MAIN") =
 
 
 # --- Work mode: a tool-using agent for multi-step tasks & coding -----------
-# Reuses code_agent.py as-is (it's a generic sandboxed tool-calling engine,
-# not chat_app-specific - same reasoning as reusing txl_cloud.py) and adds
-# one more read-only tool, web_search, so it's a genuine "research + files +
-# commands" work agent, not just a coding agent. Same safety model as TXL
-# Cloud's Code mode: read-only tools run automatically, write_file/
-# run_command always stop for the user's explicit approval first.
+# Uses txlgpt_code_agent.py, Txl GPT's own sandboxed tool-calling engine,
+# plus one more read-only tool, web_search, so it's a genuine "research +
+# files + commands" work agent, not just a coding agent. Read-only tools
+# run automatically; write_file/run_command always stop for the user's
+# explicit approval first.
 
 _WEB_SEARCH_TOOL = {
     "type": "function",
