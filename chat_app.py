@@ -517,9 +517,17 @@ def service_worker():
     return Response(sw_path.read_text(encoding="utf-8"), mimetype="application/javascript")
 
 
+# Exempt from the SITE_PASSWORD gate below: the PWA manifest, icons, and
+# service worker have to be fetchable with no credentials at all, or
+# Chrome's installability check silently fails and "Install app" never
+# shows up - a site-wide Basic Auth prompt isn't something that check
+# will push through on its own.
+_PWA_PUBLIC_ENDPOINTS = {"static", "service_worker"}
+
+
 @app.before_request
 def require_password():
-    if not SITE_PASSWORD:
+    if not SITE_PASSWORD or request.endpoint in _PWA_PUBLIC_ENDPOINTS:
         return None
     auth = request.authorization
     if not auth or auth.password != SITE_PASSWORD:
