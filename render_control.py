@@ -11,6 +11,7 @@ existing SITE_PASSWORD gate) since this one is a real public URL.
 import os
 import threading
 import time
+from pathlib import Path
 
 import requests
 from flask import Flask, Response, jsonify, render_template, request
@@ -26,6 +27,12 @@ app = Flask(__name__)
 REMOTE_CONTROL_PASSWORD = os.environ.get("REMOTE_CONTROL_PASSWORD")
 RENDER_API_KEY = os.environ.get("RENDER_API_KEY")
 RENDER_API = "https://api.render.com/v1"
+
+# Exempt from the password gate below: the PWA manifest, icons, and service
+# worker have to be fetchable with no credentials at all, or Chrome's
+# installability check silently fails and "Install app" never shows up - a
+# Basic Auth prompt isn't something that check will push through on its own.
+_PWA_PUBLIC_ENDPOINTS = {"static", "service_worker"}
 
 SERVICES = {
     "analyser": {
@@ -51,7 +58,7 @@ SERVICES = {
 
 @app.before_request
 def require_password():
-    if not REMOTE_CONTROL_PASSWORD:
+    if not REMOTE_CONTROL_PASSWORD or request.endpoint in _PWA_PUBLIC_ENDPOINTS:
         return None
     auth = request.authorization
     if not auth or auth.password != REMOTE_CONTROL_PASSWORD:
@@ -59,6 +66,16 @@ def require_password():
             "Login required", 401, {"WWW-Authenticate": 'Basic realm="TXL Remote Control"'}
         )
     return None
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Served from the root (not /static/txlremote-sw.js) so its default
+    # scope covers the whole app. A plain Response (not send_from_directory's
+    # conditional/caching path) avoids duplicate response headers that make
+    # browsers reject the SW fetch.
+    sw_path = Path(app.static_folder) / "txlremote-sw.js"
+    return Response(sw_path.read_text(encoding="utf-8"), mimetype="application/javascript")
 
 
 # --- Render API ---------------------------------------------------------------
